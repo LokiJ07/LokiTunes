@@ -67,6 +67,16 @@ For reliable *in-place* updates that preserve favorites, you should use **one st
 
 **Important:** A signed release cannot update a debug APK in place because signing keys differ. One-time uninstall/reinstall may be necessary when switching from debug testing to signed releases. Back up favorites before doing that (export is planned for a later version). **Never add your keystore / secrets to the public repository.**
 
+## GitHub Actions SDK setup fix (October 2026)
+
+The previous workflow called `android-actions/setup-android@v3` without package inputs. Its older default included Android SDK `tools`, which Google no longer publishes. This causes the setup step to fail with `Failed to find package 'tools'` before Gradle runs.
+
+The updated `.github/workflows/android.yml` explicitly uses `packages: 'platform-tools'`, then installs Android platform 36 and build-tools 36.0.0. It also prints `sdkmanager --version` to help diagnose SDK failures. The Android SDK *command-line tools* are downloaded by the setup action itself; **do not** add the obsolete bare `tools` package.
+
+To update an **existing** repository, replace only `.github/workflows/android.yml` and `app/src/main/java/com/lokij/lokitunes/MainActivity.kt` with the copies from this ZIP, then commit/push. The Kotlin file now includes the missing `rememberLauncherForActivityResult` import, identified during source review. `Actions` will automatically start a fresh build when pushed to `main`.
+
+**Validation status:** YAML parsed and static checks performed. A complete Android compile and device test were not available locally. A successful GitHub Actions run is needed before the build can be called verified.
+
 ## Android architecture
 
 - Kotlin 2.3.21 + Jetpack Compose Material 3

@@ -25,11 +25,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Override the v3 default package list: legacy `tools` was removed from
+      # Google's SDK repository and now causes sdkmanager exit code 1.
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
-      - name: Install Android 36
-        run: sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Verify SDK manager and install Android 36
+        shell: bash
+        run: |
+          sdkmanager --version
+          sdkmanager --install 'platforms;android-36' 'build-tools;36.0.0'
 
       - name: Set up Gradle 8.13
         uses: gradle/actions/setup-gradle@v4
