@@ -5,6 +5,10 @@ import android.net.Uri
 import android.graphics.BitmapFactory
 import androidx.compose.animation.animateColorAsState
 import android.media.MediaMetadataRetriever
+import android.media.audiofx.AudioEffect
+import com.lokij.lokitunes.lyrics.LrcParser
+import com.lokij.lokitunes.lyrics.LyricDocument
+import com.lokij.lokitunes.lyrics.LyricsStore
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -695,6 +699,8 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
     val topShade = lerp(Midnight, animatedAccent, 0.30f)
     var showQueue by remember { mutableStateOf(false) }
     var showSleepTimer by remember { mutableStateOf(false) }
+    var showSound by remember { mutableStateOf(false) }
+    var showLyrics by remember { mutableStateOf(false) }
     val duration = state.durationMs.takeIf { it > 0 } ?: track.durationMs
     var requestedProgress by remember(track.id) { mutableFloatStateOf(-1f) }
     val progress = if (requestedProgress >= 0f) requestedProgress else {
@@ -804,6 +810,19 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
                 Text(if (state.sleepRemainingMs > 0L) "Timer on" else "Sleep timer", fontSize = 12.sp)
             }
         }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = { showLyrics = true }, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.Subtitles, null, Modifier.size(19.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Lyrics", fontSize = 12.sp)
+            }
+            OutlinedButton(onClick = { showSound = true }, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.Equalizer, null, Modifier.size(19.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Sound", fontSize = 12.sp)
+            }
+        }
         if (state.sleepRemainingMs > 0L) {
             Spacer(Modifier.height(5.dp))
             Text("Music pauses in ${formatCountdown(state.sleepRemainingMs)}", color = Mint, fontSize = 12.sp)
@@ -864,6 +883,13 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
             }
         }
     }
+    if (showLyrics) {
+        LyricsSheet(trackId = track.id, title = track.title, positionMs = state.positionMs,
+            onClose = { showLyrics = false })
+    }
+    if (showSound) {
+        SoundSheet(state.playbackSpeed, vm::setPlaybackSpeed, onClose = { showSound = false })
+    }
     if (showSleepTimer) {
         ModalBottomSheet(onDismissRequest = { showSleepTimer = false }, containerColor = NightPanel) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 12.dp)) {
@@ -893,6 +919,130 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
                 }
                 Spacer(Modifier.height(20.dp))
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LyricsSheet(trackId: String, title: String, positionMs: Long, onClose: () -> Unit) {
+    val context = LocalContext.current
+    val lyricsStore = remember(context) { LyricsStore(context.applicationContext) }
+    var selectedUri by remember(trackId) { mutableStateOf(lyricsStore.savedUri(trackId)) }
+    var importError by remember(trackId) { mutableStateOf<String?>(null) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { lyricsStore.attach(trackId, uri) }
+                .onSuccess { selectedUri = uri; importError = null }
+                .onFailure { importError = "Unable to save file access. Try another local file." }
+        }
+    }
+    val document by produceState<LyricDocument?>(initialValue = null, trackId, selectedUri) {
+        value = if (selectedUri == null) null else withContext(Dispatchers.IO) {
+            runCatching { lyricsStore.load(selectedUri!!) }.getOrNull()
+        }
+    }
+    val activeIndex = document?.let { LrcParser.activeIndex(it, positionMs) } ?: -1
+    val lyricListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    LaunchedEffect(activeIndex, selectedUri) {
+        if (activeIndex >= 0 && activeIndex < (document?.lines?.size ?: 0)) {
+            lyricListState.animateScrollToItem(activeIndex)
+        }
+    }
+    ModalBottomSheet(onDismissRequest = onClose, containerColor = NightPanel) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 10.dp)) {
+            Text("Offline lyrics", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+            Text(title, color = SoftText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { picker.launch(arrayOf("*/*")) }) {
+                    Icon(Icons.Default.FolderOpen, null, Modifier.size(17.dp))
+                    Spacer(Modifier.width(7.dp))
+                    Text(if (selectedUri == null) "Load .lrc / .txt" else "Change file", fontSize = 12.sp)
+                }
+                if (selectedUri != null) {
+                    TextButton(onClick = { lyricsStore.clear(trackId); selectedUri = null; importError = null }) {
+                        Text("Remove", color = Lavender)
+                    }
+                }
+            }
+            if (importError != null) Text(importError.orEmpty(), color = Color(0xFFFFBEC5), fontSize = 12.sp)
+            Spacer(Modifier.height(10.dp))
+            when {
+                selectedUri == null -> Text("Choose a local .lrc file for synchronized lyrics or .txt for plain lyrics. No internet required.",
+                    color = SoftText, fontSize = 13.sp, modifier = Modifier.padding(vertical = 20.dp))
+                document == null -> Text("Loading lyrics, or this file is unavailable. Choose a different text file.",
+                    color = SoftText, fontSize = 13.sp, modifier = Modifier.padding(vertical = 20.dp))
+                document!!.lines.isEmpty() -> Text("No readable lyrics were found in this file.",
+                    color = SoftText, fontSize = 13.sp, modifier = Modifier.padding(vertical = 20.dp))
+                else -> {
+                    val lyricLines = document!!.lines
+                    Text(if (document!!.synchronized) "Synced with playback" else "Plain text lyrics",
+                        color = Mint, fontSize = 11.sp)
+                    Spacer(Modifier.height(8.dp))
+                    LazyColumn(
+                        state = lyricListState,
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 410.dp),
+                        contentPadding = PaddingValues(bottom = 18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        itemsIndexed(lyricLines) { index, line ->
+                            Text(
+                                text = line.text,
+                                color = if (document!!.synchronized && index == activeIndex) Mint else Color.White.copy(alpha = 0.73f),
+                                fontSize = if (document!!.synchronized && index == activeIndex) 21.sp else 16.sp,
+                                fontWeight = if (document!!.synchronized && index == activeIndex) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+            Text("Lyrics stay on your device. Use files you have permission to use.",
+                color = SoftText, fontSize = 10.sp, modifier = Modifier.padding(bottom = 22.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SoundSheet(speed: Float, onSpeedSelected: (Float) -> Unit, onClose: () -> Unit) {
+    val context = LocalContext.current
+    var deviceEqualizerError by remember { mutableStateOf(false) }
+    ModalBottomSheet(onDismissRequest = onClose, containerColor = NightPanel) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 10.dp)) {
+            Text("Sound settings", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+            Text("Playback speed", color = SoftText, fontSize = 13.sp)
+            Spacer(Modifier.height(8.dp))
+            SoundPresets.values.chunked(3).forEach { group ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    group.forEach { preset ->
+                        FilterChip(
+                            selected = kotlin.math.abs(speed - preset) < 0.01f,
+                            onClick = { onSpeedSelected(preset) },
+                            label = { Text("${preset}×") }
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = {
+                deviceEqualizerError = runCatching {
+                    context.startActivity(Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).apply {
+                        putExtra(AudioEffect.EXTRA_PACKAGE_NAME, context.packageName)
+                        putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
+                    })
+                }.isFailure
+            }) {
+                Icon(Icons.Default.Equalizer, null, Modifier.size(19.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Open device equalizer")
+            }
+            Text("Equalizer availability depends on your phone. Playback speed works without a device equalizer.",
+                fontSize = 12.sp, color = SoftText)
+            if (deviceEqualizerError) Text("Your phone does not have a compatible sound effects panel.",
+                color = Color(0xFFFFBEC5), fontSize = 12.sp)
+            Spacer(Modifier.height(20.dp))
         }
     }
 }

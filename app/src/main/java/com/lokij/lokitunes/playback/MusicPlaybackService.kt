@@ -49,6 +49,9 @@ class MusicPlaybackService : MediaSessionService() {
             )
             .setHandleAudioBecomingNoisy(true)
             .build()
+        player.setPlaybackSpeed(
+            com.lokij.lokitunes.ui.SoundPresets.nearest(settings.getFloat("playback_speed", 1.0f))
+        )
         mediaSession = MediaSession.Builder(this, player).build()
         settings.registerOnSharedPreferenceChangeListener(timerListener)
         scheduleSleepTimer()

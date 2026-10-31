@@ -1,71 +1,70 @@
-# LokiTunes 🎧 — v0.4.0 · Audio Experience
+# LokiTunes 🎧 — v0.5.0 · Sound & Personalization
 
-**Your music. Your rules.** Free, open-source, native Android offline music player, Midnight Aurora (black / purple / cyan), folder explorer, favorites and signed GitHub release in-app updates. Developed for Android 8+ (minSdk 26). App ID: `com.lokij.lokitunes`. MIT license.
+**Your music. Your rules.** Free, open-source, native Android offline music player, Midnight Aurora (black / purple / cyan), folder explorer, Favorites, queue and sleep timer, and signed GitHub Releases in-app updates.
 
-## What's new in 0.4.0
+- Android 8+ (`minSdk = 26`), package `com.lokij.lokitunes` (unchanged).
+- New version **0.5.0**, Android **versionCode 7** (higher than v0.4.0 build 6).
+- No music streaming, lyrics servers, accounts, ads or extra network access. The existing GitHub updater is the only internet-dependent part.
 
-- **Dynamic album colors:** Open **Now Playing**, tap the 🎨 palette icon to switch artwork-based background accent on/off. The selection is saved on your phone. If the song has no embedded art or it is grayscale, the original purple Midnight Aurora fallback is used. No artwork or color data is downloaded.
-- **10-second rewind and fast-forward:** Buttons beneath the progress bar. Seeking is clamped to available duration.
-- **Play next / Add to queue:** Three-dot menu on any song row; works from Home, Songs, Folder Explorer, Favorites, and Albums/Artists screens. Empty queue: item is queued without auto-playing. When Shuffle is enabled, queue order may differ from playback order.
-- **Queue cleanup:** Now Playing → Queue → **Clear upcoming** removes tracks *after* the currently playing track. No audio files are deleted.
-- Preserves background playback, device music discovery, Sleep Timer, Favorites JSON backup/restore, old folder views, and GitHub updater.
+## What's new in v0.5.0
 
-## IMPORTANT: Install as a normal in-app update (keep Favorites)
+### 🎤 Offline lyrics (LRC + TXT)
 
-**Prerequisite:** Your existing installed LokiTunes should be the official **signed v0.3.2** from **GitHub → Releases**, not an Actions debug artifact. Because you already successfully updated from signed v0.3.1 → v0.3.2, the same private keystore and signing secrets can be reused. **Do not generate a new keystore, uninstall v0.3.2, change applicationId, or reset app data.** Make a Favorites → Backup JSON anyway if you want extra protection.
+1. Play a track and open **Now Playing**.
+2. Tap **Lyrics** → **Load .lrc / .txt**.
+3. Select a **local** text file using Android's system picker (the picker may show other file types; choose `.lrc` or `.txt`).
+4. For a timestamped `.lrc`, the current line highlights automatically while the song plays. Multi-timestamp lines and `[offset:...]` are supported.
+5. For `.txt`, read scrollable **plain lyrics** (no synchronization).
+6. Lyrics are associated with that exact music-library track. The selected file URI is remembered across restarts/signed updates as long as Android can still access it.
+7. Tap **Change file** or **Remove** to update the selection. Original audio and lyric files are never modified.
 
-### Publish the update (no Android Studio required)
+**Important:** This version does not automatically find lyrics on the internet or automatically match `.lrc` files in music folders. The user chooses the file for each track. If a lyric file is moved/deleted, reselect it. No copyrighted lyrics are bundled with the app. `examples/demo-lyrics.lrc` contains an original demonstration file.
 
-1. Extract **LokiTunes_v0.4.0_AudioExperience_PATCH.zip**. Copy/merge its contents into the root of your existing GitHub working folder; keep the subfolder paths unchanged.
-2. From the repository root, use Git Bash:
+### 🎚️ Sound settings
 
-```bash
-git add -A
-git commit -m "feat: LokiTunes v0.4.0 audio experience"
-git push origin main
-```
+- **Now Playing → Sound**: choose **0.75×, 1×, 1.25×, 1.5×, or 2×** playback speed. Speed preference persists across app restarts and signed upgrades and applies to the background Media3 playback service.
+- **Open device equalizer** asks Android to display the phone's **system audio effects panel**. Some phones don't have one, and some effects panels may not apply to LokiTunes; the app shows a message if none is found. **This is not a built-in multi-band EQ.** A custom EQ needs separate cross-device research/testing.
+- All existing playback controls, sleep timer, queue, folder navigation, in-app updater and Favorites are intended to remain unchanged.
 
-3. Open **GitHub → Actions**. The **main branch** build must be green (unit tests + APK compilation).
-4. Before tagging, verify `app/build.gradle.kts` says `versionName = "0.4.0"` and `versionCode = 6`. Tag only the tested commit:
+## How to ship the signed update (no Android Studio)
 
-```bash
-git tag v0.4.0
-git push origin v0.4.0
-```
+**KEEP the original LokiTunes signing keystore / GitHub Secrets from v0.3.x and v0.4.0.** Never create a replacement keystore for an existing installed user base. DO NOT uninstall the current signed LokiTunes; keep Favorites and other local data. You can optionally create a Favorites JSON backup.
 
-5. In **GitHub → Actions**, verify the **tag build AND Publish signed public GitHub Release** jobs are both green. In **GitHub → Releases** verify the signed asset is **`LokiTunes-v0.4.0-release.apk`**.
-6. **On your phone, keep v0.3.2 installed**. Connect to the internet, open LokiTunes → Updates → Download update → Install update, and approve the Android installer. Confirm the Updates dialog says **Installed version: v0.4.0 · Build 6**. Favorites and playback should remain intact. Once installed, music works offline as before.
+1. Extract the **v0.5.0 PATCH ZIP**, merge it into your existing LokiTunes Git repository, keeping paths intact. Do **not** extract the full-source ZIP into a different Git working directory unless deliberately replacing your project.
+2. Commit and push the code:
 
-**Package conflict?** Do not uninstall. Check the APK was downloaded from **Releases**, not **Actions / debug artifacts**, and verify the SHA-256 signing certificate of both versions matches. The signing key must be the original keystore used for v0.3.2.
+   ```bash
+   git add -A
+   git commit -m "feat: LokiTunes v0.5.0 offline lyrics and sound settings"
+   git push origin main
+   ```
 
-## GitHub Actions / Release notes
+3. Open **GitHub → Actions** and make sure the **main** build is green, including `:app:testDebugUnitTest` and `:app:assembleDebug`. If it fails, **do not tag yet**; inspect the first compilation error.
+4. Confirm `app/build.gradle.kts` contains `versionName = "0.5.0"` and `versionCode = 7`. Then tag that exact tested commit:
 
-- Automatic `gradle :app:testDebugUnitTest :app:assembleDebug` on pushes and PRs.
-- On version tags, validates `versionName` against the tag, requires 4 GitHub signing secrets, signs and verifies the release APK, and publishes to GitHub Releases.
-- **Keep the same secrets**: `LOKITUNES_KEYSTORE_BASE64`, `LOKITUNES_KEYSTORE_PASSWORD`, `LOKITUNES_KEY_ALIAS`, `LOKITUNES_KEY_PASSWORD`.
-- Protect your keystore and passwords; never add them to this public repository. Neither the patch nor the full source includes a private key.
-- Debug APK artifacts are development-only and should not be used for public update installations.
+   ```bash
+   git tag v0.5.0
+   git push origin v0.5.0
+   ```
 
-## Manual test plan for v0.4.0
+5. Wait for the **tag-triggered signed build** and **Publish signed public GitHub Release** to both succeed. Confirm Releases contains **`LokiTunes-v0.5.0-release.apk`**, signed using the SAME certificate as the previously installed release.
+6. On your phone, open your **installed signed v0.4.0** → Updates → Download / Install. Approve Android's installer. After relaunch, Updates should display **v0.5.0 · Build 7**. Music and Favorites should remain.
 
-1. Launch LokiTunes with mobile data off: music library loads and songs play normally.
-2. Play a song **with** embedded artwork: open Now Playing → top gradient adapts; toggle palette icon off/on; relaunch app and confirm preference stays.
-3. Play a song **without** album art: original Midnight Aurora gradient appears; no crash or network request.
-4. Use ±10-second buttons near song start/end; seek never becomes negative or exceeds track duration.
-5. While a song is playing, open a song's three-dot menu → Play next → go to Queue and inspect its position. Repeat with Add to queue. Try with Shuffle **off** for deterministic order.
-6. Now Playing → Queue → Clear upcoming; current track continues to play, previously played/current entry remains.
-7. Check Sleep Timer, Favorites (including sorting and backup/restore), mini-player, Folders, Background/lock-screen playback, and next/previous.
-8. Confirm installed **v0.4.0 · Build 6** and saved Favorites survive the in-app update from signed v0.3.2.
+**If the installer says package conflict, do NOT uninstall**: verify the installed APK and downloaded APK use the same signing certificate; use GitHub **Releases** APKs for updates, never debug artifacts from Actions.
 
-## Repository layout
+## Known limits / release gate
 
-- `app/src/main/java/.../ui/LokiApp.kt` — main Compose UI / mini-player / update dialog / queue / Now Playing
-- `app/src/main/java/.../ui/LokiViewModel.kt` — media controller, queue edits, local preferences
-- `app/src/main/java/.../ui/ArtworkPalette.kt` + `ArtworkAccentSelector.kt` — local embedded-art colors
-- `app/src/main/java/.../ui/QueueRules.kt` — pure queue / seeking logic
-- `app/src/test/...` — JUnit tests including v0.4.0 regression rules
-- `.github/workflows/android.yml` — signed APK build and release workflow
+- Parser and speed-preset pure-Kotlin smoke checks, XML/YAML/static inspection and ZIP integrity validation are performed for source distribution.
+- **A complete Android Gradle compilation and physical-device test have NOT been run here.** Only publish the tag after the actual GitHub Actions build succeeds. Test speed, LRC sync, background playback, Favorites and update installation on the phone before calling the release stable.
+- External equalizer support depends on the device, and opening the system panel without a specific ExoPlayer session ID does not guarantee effects will apply to LokiTunes.
+- User-selected `.lrc`/`.txt` documents are limited to 200k characters to avoid excessive memory use.
 
-## Status & limits
+## Project and release details
 
-Source review, source archive validation, and local pure-Kotlin smoke tests have been performed, but a full Android SDK build and actual device test **must be run via GitHub Actions and your phone**. Dynamic album colors depend on the file actually containing embedded artwork. Some Android MediaStore audio locations may be restricted by system permissions. The equalizer and lyrics are not yet implemented.
+- Workflow: `.github/workflows/android.yml` (unchanged from working v0.4.0).
+- New lyric parser: `app/src/main/java/com/lokij/lokitunes/lyrics/LrcParser.kt`.
+- New lyric URI persistence: `app/src/main/java/com/lokij/lokitunes/lyrics/LyricsStore.kt`.
+- UI: `app/src/main/java/com/lokij/lokitunes/ui/LokiApp.kt`.
+- Playback speed persistence: `ui/LokiViewModel.kt` and `playback/MusicPlaybackService.kt`.
+- Tests: `app/src/test/java/com/lokij/lokitunes/{lyrics,ui}`.
+- License: MIT. Keep signing keys, `.jks` files, passwords and decoded secrets **out of public GitHub**.

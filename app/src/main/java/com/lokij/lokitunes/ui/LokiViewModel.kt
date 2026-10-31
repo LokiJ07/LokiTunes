@@ -41,6 +41,7 @@ data class LokiUiState(
     val queue: List<QueueEntry> = emptyList(),
     val queueIndex: Int = -1,
     val dynamicAlbumColors: Boolean = true,
+    val playbackSpeed: Float = 1.0f,
     val sleepTimerEndMs: Long = 0L,
     val sleepRemainingMs: Long = 0L,
     val isScanning: Boolean = false,
@@ -65,6 +66,7 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
             favorites = store.all(),
             favoriteSince = store.favoriteDates(),
             dynamicAlbumColors = settings.getBoolean("dynamic_album_colors", true),
+            playbackSpeed = SoundPresets.nearest(settings.getFloat("playback_speed", 1.0f)),
             sleepTimerEndMs = settings.getLong(SleepTimer.PREF_END_TIME, 0L),
             lastPlayedId = settings.getString("last_played_uri", null)
         )
@@ -110,6 +112,7 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
                 val connected = future.get()
                 controller = connected
                 connected.addListener(listener)
+                connected.setPlaybackSpeed(_state.value.playbackSpeed)
                 _state.update { it.copy(isConnected = true, error = null) }
                 syncPlaybackState(connected, true)
                 pendingPlay?.let { (list, index) -> playTracks(list, index) }
@@ -185,6 +188,14 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
         val enabled = !_state.value.dynamicAlbumColors
         settings.edit().putBoolean("dynamic_album_colors", enabled).apply()
         _state.update { it.copy(dynamicAlbumColors = enabled) }
+    }
+
+    /** Saved locally; applied to the Media3 controller and restored after reconnects. */
+    fun setPlaybackSpeed(speed: Float) {
+        val selected = SoundPresets.nearest(speed)
+        settings.edit().putFloat("playback_speed", selected).apply()
+        controller?.setPlaybackSpeed(selected)
+        _state.update { it.copy(playbackSpeed = selected) }
     }
 
     /** Jump relative to the real player position; never seek outside a known duration. */
@@ -380,6 +391,7 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
                 positionMs = player.currentPosition.coerceAtLeast(0L),
                 shuffleEnabled = player.shuffleModeEnabled,
                 repeatMode = player.repeatMode,
+                playbackSpeed = player.playbackParameters.speed,
                 lastPlayedId = currentId ?: it.lastPlayedId
             )
         }
