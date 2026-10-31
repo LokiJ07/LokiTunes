@@ -3,10 +3,13 @@ package com.lokij.lokitunes.ui
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -93,6 +96,18 @@ fun LokiApp(state: LokiUiState, vm: LokiViewModel) {
                 ) {
                     Text(state.error, modifier = Modifier.weight(1f), color = Color(0xFFFFBEC5), fontSize = 12.sp)
                     IconButton(onClick = vm::dismissError, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, "Dismiss", tint = Color.White)
+                    }
+                }
+            }
+            if (state.notice != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp)).background(Color(0xFF173B38)).padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(state.notice, modifier = Modifier.weight(1f), color = Mint, fontSize = 12.sp)
+                    IconButton(onClick = vm::dismissNotice, modifier = Modifier.size(28.dp)) {
                         Icon(Icons.Default.Close, "Dismiss", tint = Color.White)
                     }
                 }
@@ -265,13 +280,67 @@ private fun FoldersScreen(state: LokiUiState, vm: LokiViewModel) {
 
 @Composable
 private fun FavoritesScreen(state: LokiUiState, vm: LokiViewModel) {
-    val favorites = remember(state.tracks, state.favorites) {
-        state.tracks.filter { it.id in state.favorites }.sortedBy { it.title.lowercase() }
+    var sorting by rememberSaveable { mutableIntStateOf(0) }
+    val exportFavorites = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> if (uri != null) vm.backupFavorites(uri) }
+    val importFavorites = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) vm.restoreFavorites(uri) }
+    val favorites = remember(state.tracks, state.favorites, state.favoriteSince, sorting) {
+        state.tracks.filter { it.id in state.favorites }.let { tracks ->
+            when (sorting) {
+                1 -> tracks.sortedWith(compareByDescending<MusicTrack> { state.favoriteSince[it.id] ?: 0L }
+                    .thenBy { it.title.lowercase() })
+                2 -> tracks.sortedWith(compareBy<MusicTrack> { it.artist.lowercase() }
+                    .thenBy { it.title.lowercase() })
+                else -> tracks.sortedBy { it.title.lowercase() }
+            }
+        }
     }
     Column(Modifier.fillMaxSize()) {
         SectionHeader("Made for you", "${favorites.size} favorite songs")
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 3.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = { exportFavorites.launch("LokiTunes-favorites.json") },
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                Icon(Icons.Default.FileUpload, null, Modifier.size(17.dp))
+                Spacer(Modifier.width(5.dp))
+                Text("Backup", fontSize = 12.sp)
+            }
+            OutlinedButton(
+                onClick = { importFavorites.launch(arrayOf("application/json", "text/plain")) },
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                Icon(Icons.Default.FileDownload, null, Modifier.size(17.dp))
+                Spacer(Modifier.width(5.dp))
+                Text("Restore", fontSize = 12.sp)
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Sort:", color = SoftText, fontSize = 12.sp)
+            Spacer(Modifier.width(8.dp))
+            val labels = listOf("A–Z", "Recently liked", "Artist")
+            labels.forEachIndexed { index, label ->
+                FilterChip(
+                    selected = sorting == index,
+                    onClick = { sorting = index },
+                    label = { Text(label, fontSize = 11.sp) },
+                    modifier = Modifier.padding(end = 5.dp)
+                )
+            }
+        }
         if (favorites.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Your liked tracks", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                 FilledTonalButton(onClick = { vm.playTracks(favorites, 0) }) {
                     Icon(Icons.Default.PlayArrow, null, Modifier.size(17.dp)); Text("Play all")
@@ -475,6 +544,8 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
             }.getOrNull()
         }
     }
+    var showQueue by remember { mutableStateOf(false) }
+    var showSleepTimer by remember { mutableStateOf(false) }
     val duration = state.durationMs.takeIf { it > 0 } ?: track.durationMs
     var requestedProgress by remember(track.id) { mutableFloatStateOf(-1f) }
     val progress = if (requestedProgress >= 0f) requestedProgress else {
@@ -554,9 +625,111 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
             }
         }
         Spacer(Modifier.height(22.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = { showQueue = true }, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.QueueMusic, null, Modifier.size(19.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Queue (${state.queue.size})", fontSize = 12.sp)
+            }
+            OutlinedButton(onClick = { showSleepTimer = true }, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.Bedtime, null, Modifier.size(19.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (state.sleepRemainingMs > 0L) "Timer on" else "Sleep timer", fontSize = 12.sp)
+            }
+        }
+        if (state.sleepRemainingMs > 0L) {
+            Spacer(Modifier.height(5.dp))
+            Text("Music pauses in ${formatCountdown(state.sleepRemainingMs)}", color = Mint, fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(22.dp))
         Text("OFFLINE MODE  ·  NO ADS  ·  JUST MUSIC", color = SoftText, fontSize = 10.sp, letterSpacing = 1.2.sp)
         Spacer(Modifier.height(28.dp))
     }
+
+    if (showQueue) {
+        ModalBottomSheet(onDismissRequest = { showQueue = false }, containerColor = NightPanel) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                Text("Playing queue", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("Tap to play. Use arrows to move songs or X to remove.", color = SoftText, fontSize = 12.sp)
+                Spacer(Modifier.height(12.dp))
+                if (state.queue.isEmpty()) EmptyState("Queue is empty", "Choose a song to start listening.")
+                else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 490.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
+                    itemsIndexed(state.queue, key = { index, _ -> index }) { index, item ->
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (index == state.queueIndex) NightCard else NightPanel)
+                                .clickable { vm.playQueueIndex(index) }
+                                .padding(vertical = 5.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(if (index == state.queueIndex) Icons.Default.GraphicEq else Icons.Default.MusicNote,
+                                null, tint = if (index == state.queueIndex) Mint else SoftText,
+                                modifier = Modifier.size(22.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(item.title, color = Color.White, fontSize = 13.sp,
+                                    fontWeight = if (index == state.queueIndex) FontWeight.Bold else FontWeight.Normal,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(item.artist, color = SoftText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            IconButton(onClick = { vm.moveQueueItem(index, index - 1) }, enabled = index > 0,
+                                modifier = Modifier.size(34.dp)) {
+                                Icon(Icons.Default.KeyboardArrowUp, "Move up", Modifier.size(20.dp))
+                            }
+                            IconButton(onClick = { vm.moveQueueItem(index, index + 1) }, enabled = index < state.queue.lastIndex,
+                                modifier = Modifier.size(34.dp)) {
+                                Icon(Icons.Default.KeyboardArrowDown, "Move down", Modifier.size(20.dp))
+                            }
+                            IconButton(onClick = { vm.removeQueueItem(index) }, modifier = Modifier.size(34.dp)) {
+                                Icon(Icons.Default.Close, "Remove from queue", Modifier.size(19.dp), tint = SoftText)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (showSleepTimer) {
+        ModalBottomSheet(onDismissRequest = { showSleepTimer = false }, containerColor = NightPanel) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 12.dp)) {
+                Text("Sleep timer", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(6.dp))
+                Text("LokiTunes will pause the music automatically.", color = SoftText, fontSize = 12.sp)
+                if (state.sleepRemainingMs > 0L) {
+                    Spacer(Modifier.height(12.dp))
+                    Text("Remaining: ${formatCountdown(state.sleepRemainingMs)}", color = Mint, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.height(12.dp))
+                listOf(10, 20, 30, 45, 60, 90).chunked(3).forEach { group ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        group.forEach { minutes ->
+                            OutlinedButton(
+                                onClick = { vm.setSleepTimer(minutes); showSleepTimer = false },
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 3.dp)
+                            ) { Text("$minutes min", fontSize = 12.sp) }
+                        }
+                    }
+                }
+                if (state.sleepTimerEndMs > 0L) {
+                    TextButton(onClick = { vm.cancelSleepTimer(); showSleepTimer = false }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Cancel sleep timer", color = Lavender)
+                    }
+                }
+                Spacer(Modifier.height(20.dp))
+            }
+        }
+    }
+}
+
+private fun formatCountdown(ms: Long): String {
+    val seconds = (ms.coerceAtLeast(0L) + 999L) / 1_000L
+    val hours = seconds / 3_600L
+    val minutes = (seconds % 3_600L) / 60L
+    val rest = seconds % 60L
+    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, rest)
+        else "%02d:%02d".format(minutes, rest)
 }
 
 private fun formatTime(ms: Long): String {

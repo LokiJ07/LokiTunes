@@ -68,7 +68,7 @@ jobs:
         if: ${{ env.HAS_RELEASE_KEY == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: LokiTunes-v0.1.0-signed-release
+          name: LokiTunes-v0.2.0-signed-release
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
@@ -76,7 +76,7 @@ jobs:
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: LokiTunes-v0.1.0-debug-apk
+          name: LokiTunes-v0.2.0-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30

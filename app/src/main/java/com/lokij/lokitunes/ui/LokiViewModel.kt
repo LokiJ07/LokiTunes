@@ -2,6 +2,7 @@ package com.lokij.lokitunes.ui
 
 import android.app.Application
 import android.content.ComponentName
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.C
@@ -16,6 +17,9 @@ import com.lokij.lokitunes.data.FavoritesStore
 import com.lokij.lokitunes.data.MusicRepository
 import com.lokij.lokitunes.data.MusicTrack
 import com.lokij.lokitunes.playback.MusicPlaybackService
+import com.lokij.lokitunes.playback.SleepTimer
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -28,9 +32,16 @@ import kotlinx.coroutines.withContext
 import androidx.core.content.ContextCompat
 
 
+data class QueueEntry(val id: String, val title: String, val artist: String)
+
 data class LokiUiState(
     val tracks: List<MusicTrack> = emptyList(),
     val favorites: Set<String> = emptySet(),
+    val favoriteSince: Map<String, Long> = emptyMap(),
+    val queue: List<QueueEntry> = emptyList(),
+    val queueIndex: Int = -1,
+    val sleepTimerEndMs: Long = 0L,
+    val sleepRemainingMs: Long = 0L,
     val isScanning: Boolean = false,
     val isConnected: Boolean = false,
     val currentTrackId: String? = null,
@@ -40,7 +51,8 @@ data class LokiUiState(
     val shuffleEnabled: Boolean = false,
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
     val lastPlayedId: String? = null,
-    val error: String? = null
+    val error: String? = null,
+    val notice: String? = null
 )
 
 class LokiViewModel(application: Application) : AndroidViewModel(application) {
@@ -50,6 +62,8 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(
         LokiUiState(
             favorites = store.all(),
+            favoriteSince = store.favoriteDates(),
+            sleepTimerEndMs = settings.getLong(SleepTimer.PREF_END_TIME, 0L),
             lastPlayedId = settings.getString("last_played_uri", null)
         )
     )
@@ -60,7 +74,8 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
     private var pendingPlay: Pair<List<MusicTrack>, Int>? = null
 
     private val listener = object : Player.Listener {
-        override fun onEvents(player: Player, events: Player.Events) = syncPlaybackState(player)
+        override fun onEvents(player: Player, events: Player.Events) =
+            syncPlaybackState(player, events.contains(Player.EVENT_TIMELINE_CHANGED))
         override fun onPlayerError(error: PlaybackException) {
             _state.update { it.copy(error = "Cannot play this file. Try another track.") }
         }
@@ -71,6 +86,11 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             while (isActive) {
                 controller?.let { syncPlaybackState(it) }
+                val end = settings.getLong(SleepTimer.PREF_END_TIME, 0L)
+                _state.update {
+                    it.copy(sleepTimerEndMs = end,
+                        sleepRemainingMs = SleepTimer.remainingMs(System.currentTimeMillis(), end))
+                }
                 delay(500)
             }
         }
@@ -89,7 +109,7 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
                 controller = connected
                 connected.addListener(listener)
                 _state.update { it.copy(isConnected = true, error = null) }
-                syncPlaybackState(connected)
+                syncPlaybackState(connected, true)
                 pendingPlay?.let { (list, index) -> playTracks(list, index) }
                 pendingPlay = null
             } catch (e: Exception) {
@@ -112,9 +132,10 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun dismissError() = _state.update { it.copy(error = null) }
+    fun dismissNotice() = _state.update { it.copy(notice = null) }
 
     fun toggleFavorite(id: String) {
-        _state.update { it.copy(favorites = store.toggle(id)) }
+        _state.update { it.copy(favorites = store.toggle(id), favoriteSince = store.favoriteDates()) }
     }
 
     /** Playing a filtered list preserves that list as the playback queue. */
@@ -142,7 +163,7 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
         player.play()
         settings.edit().putString("last_played_uri", tracks[index].id).apply()
         _state.update { it.copy(lastPlayedId = tracks[index].id, error = null) }
-        syncPlaybackState(player)
+        syncPlaybackState(player, true)
     }
 
     fun playPause() {
@@ -170,15 +191,137 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun syncPlaybackState(player: Player) {
+    /** Queue edits apply to the active Media3 session, not just a visual list. */
+    fun playQueueIndex(index: Int) {
+        controller?.let { if (index in 0 until it.mediaItemCount) it.seekTo(index, 0L) }
+    }
+
+    fun moveQueueItem(from: Int, to: Int) {
+        controller?.let {
+            if (from in 0 until it.mediaItemCount && to in 0 until it.mediaItemCount) {
+                it.moveMediaItem(from, to)
+                syncPlaybackState(it, true)
+            }
+        }
+    }
+
+    fun removeQueueItem(index: Int) {
+        controller?.let {
+            if (index in 0 until it.mediaItemCount) {
+                it.removeMediaItem(index)
+                syncPlaybackState(it, true)
+            }
+        }
+    }
+
+    fun setSleepTimer(minutes: Int) {
+        val end = SleepTimer.deadline(System.currentTimeMillis(), minutes)
+        settings.edit().putLong(SleepTimer.PREF_END_TIME, end).apply()
+        _state.update { it.copy(sleepTimerEndMs = end,
+            sleepRemainingMs = SleepTimer.remainingMs(System.currentTimeMillis(), end)) }
+    }
+
+    fun cancelSleepTimer() {
+        settings.edit().remove(SleepTimer.PREF_END_TIME).apply()
+        _state.update { it.copy(sleepTimerEndMs = 0L, sleepRemainingMs = 0L) }
+    }
+
+    /** Writes only favorite metadata: no audio files, credentials or account information. */
+    fun backupFavorites(uri: Uri) {
+        val snapshot = _state.value
+        viewModelScope.launch(Dispatchers.IO) {
+            val outcome = runCatching {
+                val tracksById = snapshot.tracks.associateBy { it.id }
+                val favorites = JSONArray()
+                snapshot.favorites.forEach { id ->
+                    val track = tracksById[id]
+                    favorites.put(JSONObject().apply {
+                        put("id", id)
+                        put("title", track?.title.orEmpty())
+                        put("artist", track?.artist.orEmpty())
+                        put("folder", track?.folderPath.orEmpty())
+                        put("durationMs", track?.durationMs ?: 0L)
+                        put("savedAt", snapshot.favoriteSince[id] ?: 0L)
+                    })
+                }
+                val document = JSONObject().apply {
+                    put("app", "LokiTunes")
+                    put("schema", 1)
+                    put("favorites", favorites)
+                }
+                val stream = getApplication<Application>().contentResolver.openOutputStream(uri)
+                    ?: error("Could not open destination")
+                stream.bufferedWriter(Charsets.UTF_8).use { it.write(document.toString(2)) }
+                favorites.length()
+            }
+            outcome.fold(
+                onSuccess = { count -> _state.update { it.copy(notice = "Exported $count favorites. Keep the JSON file safe.", error = null) } },
+                onFailure = { _state.update { it.copy(error = "Unable to export favorites. Try another folder.") } }
+            )
+        }
+    }
+
+    /** Imports known songs and merges with the current favorites. */
+    fun restoreFavorites(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val outcome = runCatching {
+                val resolver = getApplication<Application>().contentResolver
+                val text = (resolver.openInputStream(uri) ?: error("Cannot open backup"))
+                    .bufferedReader(Charsets.UTF_8).use { it.readText() }
+                require(text.length <= 4_000_000) { "Backup is too large" }
+                val document = JSONObject(text)
+                require(document.optString("app") == "LokiTunes" && document.optInt("schema") == 1) {
+                    "Not a supported LokiTunes favorites backup"
+                }
+                val items = document.getJSONArray("favorites")
+                require(items.length() <= 20_000) { "Too many favorites" }
+                val tracks = _state.value.tracks
+                val byId = tracks.associateBy { it.id }
+                val bySignature = tracks.groupBy { listOf(it.title, it.artist, it.folderPath, it.durationMs.toString()) }
+                val matched = mutableMapOf<String, Long>()
+                for (i in 0 until items.length()) {
+                    val value = items.getJSONObject(i)
+                    val savedId = value.optString("id")
+                    val track = byId[savedId] ?: bySignature[listOf(
+                        value.optString("title"), value.optString("artist"),
+                        value.optString("folder"), value.optLong("durationMs").toString()
+                    )]?.firstOrNull()
+                    if (track != null) matched[track.id] = value.optLong("savedAt", 0L)
+                }
+                val added = store.merge(matched)
+                val after = store.all()
+                val dates = store.favoriteDates()
+                _state.update { it.copy(favorites = after, favoriteSince = dates) }
+                Triple(added, matched.size, items.length())
+            }
+            outcome.fold(
+                onSuccess = { (added, matched, total) ->
+                    _state.update { it.copy(notice = "Restored $added new favorites ($matched/$total songs matched).", error = null) }
+                },
+                onFailure = { _state.update { it.copy(error = "Cannot import this backup. Select a LokiTunes JSON export.") } }
+            )
+        }
+    }
+
+    private fun syncPlaybackState(player: Player, refreshQueue: Boolean = false) {
         val currentId = player.currentMediaItem?.mediaId
         val duration = player.duration.takeIf { it != C.TIME_UNSET && it >= 0 } ?: 0L
         val last = _state.value.lastPlayedId
         if (currentId != null && currentId != last) {
             settings.edit().putString("last_played_uri", currentId).apply()
         }
+        val queueSnapshot = if (refreshQueue || player.mediaItemCount != _state.value.queue.size) {
+            (0 until player.mediaItemCount).map { index ->
+                val item = player.getMediaItemAt(index)
+                QueueEntry(item.mediaId,
+                    item.mediaMetadata.title?.toString() ?: "Unknown track",
+                    item.mediaMetadata.artist?.toString() ?: "Unknown artist")
+            }
+        } else _state.value.queue
         _state.update {
             it.copy(
+                queue = queueSnapshot,
+                queueIndex = player.currentMediaItemIndex,
                 currentTrackId = currentId,
                 isPlaying = player.isPlaying,
                 durationMs = duration,
