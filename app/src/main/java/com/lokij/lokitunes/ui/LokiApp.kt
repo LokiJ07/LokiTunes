@@ -3,6 +3,7 @@ package com.lokij.lokitunes.ui
 import android.content.Intent
 import android.net.Uri
 import android.graphics.BitmapFactory
+import androidx.compose.animation.animateColorAsState
 import android.media.MediaMetadataRetriever
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -26,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -293,13 +295,13 @@ private fun HomeScreen(state: LokiUiState, vm: LokiViewModel, openSongs: () -> U
         if (last != null) {
             item {
                 SectionTitle("Jump back in", "Your last selected track")
-                TrackRow(last, state.favorites.contains(last.id), onPlay = { vm.playTracks(listOf(last), 0) }, onFavorite = { vm.toggleFavorite(last.id) })
+                TrackRow(last, state.favorites.contains(last.id), onPlay = { vm.playTracks(listOf(last), 0) }, onFavorite = { vm.toggleFavorite(last.id) }, onPlayNext = { vm.queueTrack(last, true) }, onAddToQueue = { vm.queueTrack(last, false) })
             }
         }
         item { SectionTitle("Fresh in your library", "Recently added") }
         if (recent.isEmpty()) item { EmptyState("No music found yet", "Copy some audio files to your phone, then tap refresh.") }
         items(recent, key = { it.id }) { track ->
-            TrackRow(track, state.favorites.contains(track.id), onPlay = { vm.playTracks(recent, recent.indexOf(track)) }, onFavorite = { vm.toggleFavorite(track.id) })
+            TrackRow(track, state.favorites.contains(track.id), onPlay = { vm.playTracks(recent, recent.indexOf(track)) }, onFavorite = { vm.toggleFavorite(track.id) }, onPlayNext = { vm.queueTrack(track, true) }, onAddToQueue = { vm.queueTrack(track, false) })
         }
     }
 }
@@ -388,7 +390,7 @@ private fun FoldersScreen(state: LokiUiState, vm: LokiViewModel) {
                     FolderRow(MusicPaths.folderLabel(folder), folder, count) { explorerPath = folder }
                 }
                 items(direct, key = { it.id }) { track ->
-                    TrackRow(track, state.favorites.contains(track.id), onPlay = { vm.playTracks(direct, direct.indexOf(track)) }, onFavorite = { vm.toggleFavorite(track.id) })
+                    TrackRow(track, state.favorites.contains(track.id), onPlay = { vm.playTracks(direct, direct.indexOf(track)) }, onFavorite = { vm.toggleFavorite(track.id) }, onPlayNext = { vm.queueTrack(track, true) }, onAddToQueue = { vm.queueTrack(track, false) })
                 }
                 if (childFolders.isEmpty() && direct.isEmpty()) item { EmptyState("No audio here", "Go back to browse your folders.") }
             }
@@ -507,14 +509,22 @@ private fun TrackList(tracks: List<MusicTrack>, favorites: Set<String>, vm: Loki
     } else {
         LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
             items(tracks, key = { it.id }) { track ->
-                TrackRow(track, favorites.contains(track.id), onPlay = { vm.playTracks(tracks, tracks.indexOf(track)) }, onFavorite = { vm.toggleFavorite(track.id) })
+                TrackRow(track, favorites.contains(track.id), onPlay = { vm.playTracks(tracks, tracks.indexOf(track)) }, onFavorite = { vm.toggleFavorite(track.id) }, onPlayNext = { vm.queueTrack(track, true) }, onAddToQueue = { vm.queueTrack(track, false) })
             }
         }
     }
 }
 
 @Composable
-private fun TrackRow(track: MusicTrack, isFavorite: Boolean, onPlay: () -> Unit, onFavorite: () -> Unit) {
+private fun TrackRow(
+    track: MusicTrack,
+    isFavorite: Boolean,
+    onPlay: () -> Unit,
+    onFavorite: () -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit
+) {
+    var menuOpen by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onPlay).padding(horizontal = 18.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -526,10 +536,24 @@ private fun TrackRow(track: MusicTrack, isFavorite: Boolean, onPlay: () -> Unit,
             Spacer(Modifier.height(2.dp))
             Text("${track.artist}  ·  ${formatTime(track.durationMs)}", fontSize = 11.sp, color = SoftText, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        IconButton(onClick = onFavorite, modifier = Modifier.size(42.dp)) {
+        IconButton(onClick = onFavorite, modifier = Modifier.size(38.dp)) {
             Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 contentDescription = if (isFavorite) "Remove favorite" else "Add favorite",
-                tint = if (isFavorite) Lavender else SoftText, modifier = Modifier.size(22.dp))
+                tint = if (isFavorite) Lavender else SoftText, modifier = Modifier.size(21.dp))
+        }
+        Box {
+            IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Default.MoreVert, contentDescription = "More options for ${track.title}",
+                    tint = SoftText, modifier = Modifier.size(22.dp))
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(text = { Text("Play next") }, leadingIcon = {
+                    Icon(Icons.Default.PlaylistPlay, null)
+                }, onClick = { menuOpen = false; onPlayNext() })
+                DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = {
+                    Icon(Icons.Default.QueueMusic, null)
+                }, onClick = { menuOpen = false; onAddToQueue() })
+            }
         }
     }
 }
@@ -646,23 +670,29 @@ private fun MiniPlayer(track: MusicTrack, isPlaying: Boolean, vm: LokiViewModel,
 @Composable
 private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiViewModel, onClose: () -> Unit) {
     val context = LocalContext.current
-    val artwork by produceState<ImageBitmap?>(initialValue = null, track.id) {
+    val artworkVisual by produceState<ArtworkVisual?>(initialValue = null, track.id) {
         value = withContext(Dispatchers.IO) {
             runCatching {
                 val retriever = MediaMetadataRetriever()
                 try {
                     retriever.setDataSource(context, track.uri)
                     val bytes = retriever.embeddedPicture ?: return@runCatching null
-                    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-                    val factor = maxOf(1, maxOf(options.outWidth, options.outHeight) / 600)
-                    options.inJustDecodeBounds = false
-                    options.inSampleSize = factor
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+                    val factor = maxOf(1, maxOf(bounds.outWidth, bounds.outHeight) / 600)
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
+                        BitmapFactory.Options().apply { inSampleSize = factor }) ?: return@runCatching null
+                    val accent = sampleArtworkAccent(bitmap) ?: Lavender
+                    ArtworkVisual(bitmap.asImageBitmap(), accent)
                 } finally { retriever.release() }
             }.getOrNull()
         }
     }
+    val currentArtwork = artworkVisual
+    val desiredAccent = if (state.dynamicAlbumColors) currentArtwork?.accent ?: Lavender else Lavender
+    val animatedAccent by animateColorAsState(targetValue = desiredAccent, label = "Album artwork accent")
+    val topShade = lerp(Midnight, animatedAccent, 0.30f)
     var showQueue by remember { mutableStateOf(false) }
     var showSleepTimer by remember { mutableStateOf(false) }
     val duration = state.durationMs.takeIf { it > 0 } ?: track.durationMs
@@ -672,7 +702,9 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
     }
 
     Column(
-        Modifier.fillMaxSize().background(Midnight).verticalScroll(rememberScrollState())
+        Modifier.fillMaxSize()
+            .background(Brush.verticalGradient(listOf(topShade, Midnight, Midnight)))
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 26.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -684,11 +716,18 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
                 Text("LokiTunes", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.weight(1f))
-            Spacer(Modifier.size(48.dp))
+            IconButton(onClick = vm::toggleDynamicAlbumColors) {
+                Icon(Icons.Default.Palette,
+                    contentDescription = if (state.dynamicAlbumColors) "Disable album colors" else "Enable album colors",
+                    tint = if (state.dynamicAlbumColors) animatedAccent else SoftText)
+            }
         }
-        Spacer(Modifier.height(38.dp))
+        Spacer(Modifier.height(8.dp))
+        Text(if (state.dynamicAlbumColors) "Album colors · On" else "Midnight Aurora · Fixed colors",
+            color = SoftText, fontSize = 11.sp)
+        Spacer(Modifier.height(24.dp))
         Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(29.dp)).background(albumGradient), contentAlignment = Alignment.Center) {
-            if (artwork != null) Image(artwork!!, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            if (currentArtwork != null) Image(currentArtwork.image, "Album cover", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             else Icon(Icons.Default.GraphicEq, null, tint = Color.White.copy(alpha = 0.92f), modifier = Modifier.size(118.dp))
         }
         Spacer(Modifier.height(35.dp))
@@ -716,10 +755,19 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
                 requestedProgress = -1f
             },
             enabled = duration > 0L,
-            colors = SliderDefaults.colors(thumbColor = Mint, activeTrackColor = Lavender, inactiveTrackColor = NightCard)
+            colors = SliderDefaults.colors(thumbColor = Mint, activeTrackColor = animatedAccent, inactiveTrackColor = NightCard)
         )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween) {
             Text(formatTime(if (requestedProgress >= 0f) (requestedProgress * duration).toLong() else state.positionMs), fontSize = 11.sp, color = SoftText)
+            TextButton(onClick = { vm.seekBy(-10_000L) }, contentPadding = PaddingValues(horizontal = 5.dp)) {
+                Icon(Icons.Default.Replay10, "Rewind 10 seconds", Modifier.size(17.dp))
+                Text("10s", fontSize = 11.sp)
+            }
+            TextButton(onClick = { vm.seekBy(10_000L) }, contentPadding = PaddingValues(horizontal = 5.dp)) {
+                Icon(Icons.Default.Forward10, "Forward 10 seconds", Modifier.size(17.dp))
+                Text("10s", fontSize = 11.sp)
+            }
             Text(formatTime(duration), fontSize = 11.sp, color = SoftText)
         }
         Spacer(Modifier.height(12.dp))
@@ -768,8 +816,15 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
     if (showQueue) {
         ModalBottomSheet(onDismissRequest = { showQueue = false }, containerColor = NightPanel) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                Text("Playing queue", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Text("Tap to play. Use arrows to move songs or X to remove.", color = SoftText, fontSize = 12.sp)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Playing queue", fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = vm::clearUpcoming,
+                        enabled = state.queueIndex >= 0 && state.queueIndex < state.queue.lastIndex) {
+                        Text("Clear upcoming", fontSize = 11.sp)
+                    }
+                }
+                Text("Tap to play · arrows to reorder · X to remove", color = SoftText, fontSize = 12.sp)
                 Spacer(Modifier.height(12.dp))
                 if (state.queue.isEmpty()) EmptyState("Queue is empty", "Choose a song to start listening.")
                 else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 490.dp), contentPadding = PaddingValues(bottom = 24.dp)) {

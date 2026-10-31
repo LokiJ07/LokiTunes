@@ -40,6 +40,7 @@ data class LokiUiState(
     val favoriteSince: Map<String, Long> = emptyMap(),
     val queue: List<QueueEntry> = emptyList(),
     val queueIndex: Int = -1,
+    val dynamicAlbumColors: Boolean = true,
     val sleepTimerEndMs: Long = 0L,
     val sleepRemainingMs: Long = 0L,
     val isScanning: Boolean = false,
@@ -63,6 +64,7 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
         LokiUiState(
             favorites = store.all(),
             favoriteSince = store.favoriteDates(),
+            dynamicAlbumColors = settings.getBoolean("dynamic_album_colors", true),
             sleepTimerEndMs = settings.getLong(SleepTimer.PREF_END_TIME, 0L),
             lastPlayedId = settings.getString("last_played_uri", null)
         )
@@ -138,6 +140,18 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(favorites = store.toggle(id), favoriteSince = store.favoriteDates()) }
     }
 
+    private fun mediaItemFor(track: MusicTrack): MediaItem =
+        MediaItem.Builder()
+            .setMediaId(track.id)
+            .setUri(track.uri)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(track.title)
+                    .setArtist(track.artist)
+                    .setAlbumTitle(track.album)
+                    .build()
+            ).build()
+
     /** Playing a filtered list preserves that list as the playback queue. */
     fun playTracks(tracks: List<MusicTrack>, index: Int) {
         if (tracks.isEmpty() || index !in tracks.indices) return
@@ -146,18 +160,7 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
             pendingPlay = tracks to index
             return
         }
-        val items = tracks.map { track ->
-            MediaItem.Builder()
-                .setMediaId(track.id)
-                .setUri(track.uri)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(track.title)
-                        .setArtist(track.artist)
-                        .setAlbumTitle(track.album)
-                        .build()
-                ).build()
-        }
+        val items = tracks.map(::mediaItemFor)
         player.setMediaItems(items, index, 0L)
         player.prepare()
         player.play()
@@ -177,6 +180,55 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun seekTo(position: Long) { controller?.seekTo(position.coerceAtLeast(0L)) }
+    /** Persist the album-art color setting, including across signed APK upgrades. */
+    fun toggleDynamicAlbumColors() {
+        val enabled = !_state.value.dynamicAlbumColors
+        settings.edit().putBoolean("dynamic_album_colors", enabled).apply()
+        _state.update { it.copy(dynamicAlbumColors = enabled) }
+    }
+
+    /** Jump relative to the real player position; never seek outside a known duration. */
+    fun seekBy(deltaMs: Long) {
+        controller?.let { player ->
+            val maxDuration = player.duration.takeIf { it != C.TIME_UNSET && it >= 0L }
+            player.seekTo(boundedSeekPosition(player.currentPosition, deltaMs, maxDuration))
+            syncPlaybackState(player)
+        }
+    }
+
+    /** Add an existing library track to the active Media3 queue, preserving playback. */
+    fun queueTrack(track: MusicTrack, playNext: Boolean) {
+        val player = controller
+        if (player == null) {
+            _state.update { it.copy(notice = "Music player is still connecting. Try again.") }
+            return
+        }
+        val item = mediaItemFor(track)
+        val count = player.mediaItemCount
+        val insertAt = queueInsertIndex(player.currentMediaItemIndex, count, playNext)
+        player.addMediaItem(insertAt, item)
+        if (count == 0) player.prepare() // Queue the track but do not start unexpectedly.
+        syncPlaybackState(player, true)
+        val notice = when {
+            count == 0 -> "Added to queue. Press Play when ready."
+            playNext && player.shuffleModeEnabled -> "Added after current song. Shuffle may change its playback order."
+            playNext -> "Playing next: ${track.title}"
+            else -> "Added to queue: ${track.title}"
+        }
+        _state.update { it.copy(notice = notice, error = null) }
+    }
+
+    fun clearUpcoming() {
+        controller?.let { player ->
+            val from = (player.currentMediaItemIndex + 1).coerceIn(0, player.mediaItemCount)
+            if (from < player.mediaItemCount) {
+                player.removeMediaItems(from, player.mediaItemCount)
+                syncPlaybackState(player, true)
+                _state.update { it.copy(notice = "Upcoming tracks cleared.") }
+            }
+        }
+    }
+
     fun toggleShuffle() {
         controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled; syncPlaybackState(it) }
     }
