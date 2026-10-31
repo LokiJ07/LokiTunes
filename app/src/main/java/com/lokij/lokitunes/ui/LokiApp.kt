@@ -524,6 +524,7 @@ private fun MiniPlayer(track: MusicTrack, isPlaying: Boolean, vm: LokiViewModel,
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiViewModel, onClose: () -> Unit) {
     val context = LocalContext.current
