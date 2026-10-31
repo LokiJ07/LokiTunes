@@ -1,6 +1,39 @@
-# LokiTunes 🎧 — v0.3.1 (First signed in-app update test)
+# LokiTunes 🎧 — v0.3.2 (Signed in-app update verification)
 
 **Your music. Your rules.** Native Android offline music player with Midnight Aurora UI, folder music navigation, favorites, play queue and sleep timer. Free/open-source (MIT). App ID `com.lokij.lokitunes`, minimum API 26 (Android 8).
+
+## v0.3.2 — Test an update WITHOUT uninstalling
+
+This update is intentionally small to isolate signing compatibility and the update flow.
+**The user-visible confirmation is in the Updates dialog:** after installation it must show
+`Installed version: v0.3.2 · Build 5`.
+
+**Important prerequisites (do not skip):**
+
+1. Install **v0.3.1 from GitHub → Releases**, asset `LokiTunes-v0.3.1-release.apk`, on your phone. Do **not** use `LokiTunes-dev-debug-apk` from Actions; it uses different signing keys and Android will reject the install-over update. If currently running a debug install, back up Favorites before performing the one-time switch to a signed release.
+2. Keep the **SAME `lokitunes-release.jks`** used to publish v0.3.1 and the SAME 4 `LOKITUNES_*` GitHub Actions secrets. Do not generate a new keystore.
+3. Apply the v0.3.2 PATCH ZIP over the existing project root. Commit and push to `main`:
+
+```bash
+git add -A
+git commit -m "test: LokiTunes v0.3.2 signed in-app update"
+git push origin main
+```
+
+4. Confirm the **main branch GitHub Actions run is green**, then publish the **new** version tag (only if not already present):
+
+```bash
+git tag v0.3.2
+git push origin v0.3.2
+```
+
+5. Wait for the **tag run** to be green, including its **Publish signed public GitHub Release** job. On **GitHub → Releases → v0.3.2** ensure the asset name is **`LokiTunes-v0.3.2-release.apk`**.
+6. Keep the installed v0.3.1 open on your phone, enable Wi-Fi/mobile data, tap the Updates icon, and expect v0.3.2. Tap **Download update**, **Install update**, approve the Android installer. **Do not uninstall v0.3.1**.
+7. Reopen LokiTunes and verify `Installed version: v0.3.2 · Build 5`, existing **Favorites**, music playback and folder scan. Then disable mobile data/Wi-Fi and verify playback remains offline.
+
+**If Android reports package conflict:** Stop; do **not** uninstall if you want to preserve app data. Compare the SHA-256 signing fingerprints of the installed and downloaded APK. The current APK is usually a debug build or was signed using a different keystore. Fixing an APK's app code cannot bypass this Android requirement.
+
+> Passing unit tests + GitHub Actions compilation only proves the APK builds, not that the install-over update succeeds. The real test is completing steps 6–7 **without uninstalling**.
 
 ## What's new in v0.3.1 — First in-app updater test
 

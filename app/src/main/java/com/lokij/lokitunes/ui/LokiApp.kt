@@ -182,7 +182,7 @@ private fun UpdateDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text(
-                    text = "Installed version: v${BuildConfig.VERSION_NAME}",
+                    text = "Installed version: v${BuildConfig.VERSION_NAME} · Build ${BuildConfig.VERSION_CODE}",
                     fontSize = 12.sp,
                     color = SoftText
                 )
