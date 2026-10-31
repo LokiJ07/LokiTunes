@@ -1,6 +1,27 @@
-# LokiTunes 🎧 — v0.3.0 (GitHub Releases + in-app updater)
+# LokiTunes 🎧 — v0.3.1 (First signed in-app update test)
 
 **Your music. Your rules.** Native Android offline music player with Midnight Aurora UI, folder music navigation, favorites, play queue and sleep timer. Free/open-source (MIT). App ID `com.lokij.lokitunes`, minimum API 26 (Android 8).
+
+## What's new in v0.3.1 — First in-app updater test
+
+- **Version updated** from `versionName = "0.3.0"`, `versionCode = 3` to `versionName = "0.3.1"`, `versionCode = 4`. Android requires increasing version codes for an install-over update.
+- **Installed version now visible** in the existing Updates dialog so you can verify the upgrade actually completed.
+- **Version comparison tests extended** for both v0.3.0 → v0.3.1 and the reverse.
+- No changes to playback engine, saved Favorites, folder navigation, UI theme, package ID, update endpoint, signing setup or GitHub Actions release pipeline.
+
+### Publish v0.3.1 without reinstalling
+
+**Before publishing:** open the **v0.3.0** GitHub Release and confirm the downloadable asset is exactly `LokiTunes-v0.3.0-release.apk`. Install that **signed release APK** on the phone if you have not yet. A debug APK may require uninstalling first because it uses another certificate: back up Favorites (v0.2.0+ supports Favorites → Backup) before uninstalling. The signed v0.3.0 → signed v0.3.1 upgrade should NOT require uninstalling, as long as the same original signing keystore and application ID are used.
+
+1. Apply the v0.3.1 PATCH ZIP over your current LokiTunes repository, preserving paths.
+2. Run `git add -A && git commit -m "test: release LokiTunes v0.3.1 updater" && git push origin main`.
+3. Confirm the **Android Build & Release** workflow on `main` is green.
+4. Tag the **exact** commit that passed: `git tag v0.3.1 && git push origin v0.3.1` (do this only once; do not tag if it already exists).
+5. Wait for the **tag workflow's publish job** to succeed; GitHub Releases must contain `LokiTunes-v0.3.1-release.apk`.
+6. On the phone **still running signed v0.3.0**, connect to the internet, open LokiTunes and tap the Updates icon (or restart the app). It should offer **v0.3.1**. Tap **Download update** → **Install update** → approve Android's installer.
+7. Reopen LokiTunes → Updates: it should say **Installed version: v0.3.1** and **You're up to date**. Confirm that Favorites, queue, sleep timer, folder scanning and offline playback still work. Do **not** uninstall the signed v0.3.0 release to perform this test.
+
+If no update appears, check the v0.3.1 release is public (not draft/prerelease), the APK filename matches, the GitHub asset has an SHA-256 digest, and the currently installed signed version is v0.3.0. If Android says **App not installed**, do not uninstall to force it; first verify both APKs were signed with the **same** signing certificate and that the new `versionCode` is 4.
 
 ## What's new in 0.3.0
 

@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lokij.lokitunes.BuildConfig
 import com.lokij.lokitunes.update.UpdatePhase
 import com.lokij.lokitunes.update.UpdateUiState
 import com.lokij.lokitunes.update.UpdateViewModel
@@ -180,6 +181,11 @@ private fun UpdateDialog(
         title = { Text("LokiTunes updates 💜", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text(
+                    text = "Installed version: v${BuildConfig.VERSION_NAME}",
+                    fontSize = 12.sp,
+                    color = SoftText
+                )
                 when (state.phase) {
                     UpdatePhase.CHECKING -> {
                         CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
