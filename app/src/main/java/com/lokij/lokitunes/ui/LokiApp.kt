@@ -9,6 +9,9 @@ import android.media.audiofx.AudioEffect
 import com.lokij.lokitunes.lyrics.LrcParser
 import com.lokij.lokitunes.lyrics.LyricDocument
 import com.lokij.lokitunes.lyrics.LyricsStore
+import com.lokij.lokitunes.lyrics.LrcLibClient
+import com.lokij.lokitunes.lyrics.RemoteLyricHit
+import com.lokij.lokitunes.lyrics.ResolvedLyrics
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -51,6 +54,7 @@ import com.lokij.lokitunes.data.MusicPaths
 import com.lokij.lokitunes.data.MusicTrack
 import com.lokij.lokitunes.ui.theme.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToLong
 
@@ -884,7 +888,7 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
         }
     }
     if (showLyrics) {
-        LyricsSheet(trackId = track.id, title = track.title, positionMs = state.positionMs,
+        LyricsSheet(track = track, positionMs = state.positionMs,
             onClose = { showLyrics = false })
     }
     if (showSound) {
@@ -925,81 +929,197 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LyricsSheet(trackId: String, title: String, positionMs: Long, onClose: () -> Unit) {
+private fun LyricsSheet(track: MusicTrack, positionMs: Long, onClose: () -> Unit) {
     val context = LocalContext.current
     val lyricsStore = remember(context) { LyricsStore(context.applicationContext) }
-    var selectedUri by remember(trackId) { mutableStateOf(lyricsStore.savedUri(trackId)) }
-    var importError by remember(trackId) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    var selectedUri by remember(track.id) { mutableStateOf(lyricsStore.savedUri(track.id)) }
+    var folderUri by remember(track.id) { mutableStateOf(lyricsStore.savedFolder()) }
+    var revision by remember(track.id) { mutableIntStateOf(0) }
+    var importError by remember(track.id) { mutableStateOf<String?>(null) }
+    var onlineMode by remember(track.id) { mutableStateOf(false) }
+    var queryTitle by remember(track.id) { mutableStateOf(track.title) }
+    var queryArtist by remember(track.id) { mutableStateOf(if (track.artist == "Unknown artist") "" else track.artist) }
+    var searching by remember(track.id) { mutableStateOf(false) }
+    var saving by remember(track.id) { mutableStateOf(false) }
+    var searched by remember(track.id) { mutableStateOf(false) }
+    var searchResults by remember(track.id) { mutableStateOf<List<RemoteLyricHit>>(emptyList()) }
+    var onlineError by remember(track.id) { mutableStateOf<String?>(null) }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            runCatching { lyricsStore.attach(trackId, uri) }
-                .onSuccess { selectedUri = uri; importError = null }
-                .onFailure { importError = "Unable to save file access. Try another local file." }
+            runCatching { lyricsStore.attach(track.id, uri) }
+                .onSuccess { selectedUri = uri; revision++; importError = null }
+                .onFailure { importError = "Could not read this lyric file. Try another one." }
         }
     }
-    val document by produceState<LyricDocument?>(initialValue = null, trackId, selectedUri) {
-        value = if (selectedUri == null) null else withContext(Dispatchers.IO) {
-            runCatching { lyricsStore.load(selectedUri!!) }.getOrNull()
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching { lyricsStore.setFolder(uri) }
+                .onSuccess { folderUri = uri; revision++; importError = null }
+                .onFailure { importError = "Folder access was denied. Select a different music folder." }
         }
     }
+    val resolved by produceState<ResolvedLyrics?>(initialValue = null, track.id, selectedUri, folderUri, revision) {
+        value = withContext(Dispatchers.IO) { lyricsStore.resolve(track) }
+    }
+    val document = resolved?.document
     val activeIndex = document?.let { LrcParser.activeIndex(it, positionMs) } ?: -1
     val lyricListState = androidx.compose.foundation.lazy.rememberLazyListState()
-    LaunchedEffect(activeIndex, selectedUri) {
-        if (activeIndex >= 0 && activeIndex < (document?.lines?.size ?: 0)) {
+    LaunchedEffect(activeIndex, revision, selectedUri, folderUri) {
+        if (activeIndex in 0 until (document?.lines?.size ?: 0)) {
             lyricListState.animateScrollToItem(activeIndex)
         }
     }
+
     ModalBottomSheet(onDismissRequest = onClose, containerColor = NightPanel) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 10.dp)) {
-            Text("Offline lyrics", fontSize = 23.sp, fontWeight = FontWeight.Bold)
-            Text(title, color = SoftText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { picker.launch(arrayOf("*/*")) }) {
-                    Icon(Icons.Default.FolderOpen, null, Modifier.size(17.dp))
-                    Spacer(Modifier.width(7.dp))
-                    Text(if (selectedUri == null) "Load .lrc / .txt" else "Change file", fontSize = 12.sp)
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+            .padding(horizontal = 18.dp, vertical = 10.dp)) {
+            Text("Smart lyrics", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+            Text(track.title, color = SoftText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(10.dp))
+            // Existing v0.5.0 manual file selection is kept intact.
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }, modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 5.dp)) {
+                    Icon(Icons.Default.InsertDriveFile, null, Modifier.size(15.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text("Local file", fontSize = 11.sp)
                 }
-                if (selectedUri != null) {
-                    TextButton(onClick = { lyricsStore.clear(trackId); selectedUri = null; importError = null }) {
-                        Text("Remove", color = Lavender)
+                OutlinedButton(onClick = { folderPicker.launch(null) }, modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 5.dp)) {
+                    Icon(Icons.Default.FolderOpen, null, Modifier.size(15.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text("Music folder", fontSize = 11.sp)
+                }
+                Button(onClick = { onlineMode = !onlineMode }, modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 5.dp)) {
+                    Icon(Icons.Default.Search, null, Modifier.size(15.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text("Online", fontSize = 11.sp)
+                }
+            }
+            Text("Offline auto-detection checks matching .lrc/.txt names in your selected folder and its subfolders.",
+                color = SoftText, fontSize = 11.sp)
+            if (folderUri != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("✓ Music folder access saved", fontSize = 11.sp, color = Mint, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        lyricsStore.clearFolder()
+                        folderUri = null
+                        revision++
+                    }) { Text("Remove folder", fontSize = 11.sp) }
+                }
+            }
+            if (resolved != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(resolved!!.source, color = Mint, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                    if (selectedUri != null || resolved!!.source.startsWith("Saved")) {
+                        TextButton(onClick = {
+                            lyricsStore.clear(track.id)
+                            selectedUri = null
+                            revision++
+                            importError = null
+                        }) { Text("Clear saved", fontSize = 11.sp) }
                     }
                 }
             }
             if (importError != null) Text(importError.orEmpty(), color = Color(0xFFFFBEC5), fontSize = 12.sp)
-            Spacer(Modifier.height(10.dp))
+            if (onlineMode) {
+                Spacer(Modifier.height(8.dp))
+                Text("Search LRCLIB (optional internet)", fontWeight = FontWeight.SemiBold, color = Mint)
+                Text("Only your search title/artist is sent when you press Search; music files are never uploaded.",
+                    fontSize = 11.sp, color = SoftText)
+                OutlinedTextField(value = queryTitle, onValueChange = { queryTitle = it.take(120) },
+                    modifier = Modifier.fillMaxWidth(), label = { Text("Song title") }, singleLine = true)
+                OutlinedTextField(value = queryArtist, onValueChange = { queryArtist = it.take(120) },
+                    modifier = Modifier.fillMaxWidth(), label = { Text("Artist (optional)") }, singleLine = true)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Button(onClick = {
+                        searching = true
+                        searched = false
+                        onlineError = null
+                        searchResults = emptyList()
+                        scope.launch {
+                            val response = withContext(Dispatchers.IO) {
+                                runCatching { LrcLibClient.search(queryTitle, queryArtist) }
+                            }
+                            response.onSuccess { searchResults = it; searched = true }
+                                .onFailure { onlineError = it.message ?: "Lyrics search unavailable. Check your internet." }
+                            searching = false
+                        }
+                    }, enabled = !searching && !saving && queryTitle.isNotBlank()) {
+                        Text(if (searching) "Searching…" else "Search lyrics")
+                    }
+                    if (searching || saving) {
+                        Spacer(Modifier.width(12.dp))
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
+                }
+                if (onlineError != null) Text(onlineError.orEmpty(), color = Color(0xFFFFBEC5), fontSize = 12.sp)
+                if (searched && searchResults.isEmpty()) Text("No lyrics found. Try a simpler title or different artist.",
+                    color = SoftText, fontSize = 12.sp)
+                if (searchResults.isNotEmpty()) {
+                    Text("Select the correct song below to save its lyrics offline:", color = SoftText, fontSize = 12.sp)
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 225.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(searchResults, key = { it.id }) { hit ->
+                            Surface(color = Midnight, shape = RoundedCornerShape(10.dp)) {
+                                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(hit.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+                                        Text("${hit.artist} · ${hit.durationSeconds}s · ${if (hit.synced != null) "Synced" else "Plain"}",
+                                            color = SoftText, fontSize = 11.sp)
+                                    }
+                                    TextButton(onClick = {
+                                        val content = hit.bestText ?: return@TextButton
+                                        saving = true
+                                        onlineError = null
+                                        scope.launch {
+                                            val result = withContext(Dispatchers.IO) {
+                                                runCatching { lyricsStore.saveOnline(track.id, content) }
+                                            }
+                                            result.onSuccess {
+                                                // Manual file takes precedence. Switch to the newly saved online selection.
+                                                if (selectedUri != null) {
+                                                    lyricsStore.clearManual(track.id)
+                                                    selectedUri = null
+                                                }
+                                                revision++
+                                                onlineMode = false
+                                                searchResults = emptyList()
+                                            }.onFailure { onlineError = "Could not save lyrics: ${it.message.orEmpty()}" }
+                                            saving = false
+                                        }
+                                    }, enabled = !saving) { Text("Save", color = Mint) }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+            Spacer(Modifier.height(8.dp))
             when {
-                selectedUri == null -> Text("Choose a local .lrc file for synchronized lyrics or .txt for plain lyrics. No internet required.",
-                    color = SoftText, fontSize = 13.sp, modifier = Modifier.padding(vertical = 20.dp))
-                document == null -> Text("Loading lyrics, or this file is unavailable. Choose a different text file.",
-                    color = SoftText, fontSize = 13.sp, modifier = Modifier.padding(vertical = 20.dp))
-                document!!.lines.isEmpty() -> Text("No readable lyrics were found in this file.",
-                    color = SoftText, fontSize = 13.sp, modifier = Modifier.padding(vertical = 20.dp))
+                document == null -> Text("No matching lyrics yet. Select your Music folder, choose a file, or search online and save.",
+                    color = SoftText, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
+                document.lines.isEmpty() -> Text("This lyrics file is empty.", color = SoftText, fontSize = 13.sp)
                 else -> {
-                    val lyricLines = document!!.lines
-                    Text(if (document!!.synchronized) "Synced with playback" else "Plain text lyrics",
-                        color = Mint, fontSize = 11.sp)
-                    Spacer(Modifier.height(8.dp))
-                    LazyColumn(
-                        state = lyricListState,
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 410.dp),
-                        contentPadding = PaddingValues(bottom = 18.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        itemsIndexed(lyricLines) { index, line ->
-                            Text(
-                                text = line.text,
-                                color = if (document!!.synchronized && index == activeIndex) Mint else Color.White.copy(alpha = 0.73f),
-                                fontSize = if (document!!.synchronized && index == activeIndex) 21.sp else 16.sp,
-                                fontWeight = if (document!!.synchronized && index == activeIndex) FontWeight.Bold else FontWeight.Normal,
-                                modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center
-                            )
+                    Text(if (document.synchronized) "● Synchronized lyrics" else "Plain lyrics", color = Mint, fontSize = 11.sp)
+                    Spacer(Modifier.height(6.dp))
+                    LazyColumn(state = lyricListState, modifier = Modifier.fillMaxWidth().heightIn(max = 330.dp),
+                        contentPadding = PaddingValues(bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        itemsIndexed(document.lines) { index, line ->
+                            Text(line.text,
+                                color = if (document.synchronized && index == activeIndex) Mint else Color.White.copy(alpha = 0.73f),
+                                fontSize = if (document.synchronized && index == activeIndex) 20.sp else 15.sp,
+                                fontWeight = if (document.synchronized && index == activeIndex) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
                         }
                     }
                 }
             }
-            Text("Lyrics stay on your device. Use files you have permission to use.",
-                color = SoftText, fontSize = 10.sp, modifier = Modifier.padding(bottom = 22.dp))
+            Text("Lyrics source: local files or LRCLIB. Only save lyrics you have permission to use.",
+                color = SoftText, fontSize = 10.sp, modifier = Modifier.padding(bottom = 22.dp, top = 8.dp))
         }
     }
 }

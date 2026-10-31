@@ -12,7 +12,8 @@ data class MusicTrack(
     val albumId: Long,
     val durationMs: Long,
     val folderPath: String,
-    val dateAdded: Long
+    val dateAdded: Long,
+    val fileName: String = ""
 ) {
     val folderName: String get() = MusicPaths.folderLabel(folderPath)
 }

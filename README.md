@@ -1,70 +1,53 @@
-# LokiTunes 🎧 — v0.5.0 · Sound & Personalization
+# LokiTunes 🎧 — v0.6.0 Smart Lyrics
 
-**Your music. Your rules.** Free, open-source, native Android offline music player, Midnight Aurora (black / purple / cyan), folder explorer, Favorites, queue and sleep timer, and signed GitHub Releases in-app updates.
+Android 8+ offline-first music player. Midnight Aurora UI. Free open source. **Package: `com.lokij.lokitunes` — unchanged**. `versionCode = 8`, `versionName = "0.6.0"`.
 
-- Android 8+ (`minSdk = 26`), package `com.lokij.lokitunes` (unchanged).
-- New version **0.5.0**, Android **versionCode 7** (higher than v0.4.0 build 6).
-- No music streaming, lyrics servers, accounts, ads or extra network access. The existing GitHub updater is the only internet-dependent part.
+## New: automatic offline lyrics matching
 
-## What's new in v0.5.0
+1. Put lyrics alongside the music, e.g. `Music/OPM/Example.mp3` and `Music/OPM/Example.lrc`.
+2. In **Now Playing → Lyrics**, tap **Music folder** and choose `Music` (Android folder permission prompt).
+3. LokiTunes remembers that folder and attempts exact filename matches for each song on the next Lyrics opening. Subfolders are checked for songs whose MediaStore folder paths are beneath the selected folder.
+4. `.lrc` uses timestamps for synchronized highlighting. `.txt` is shown as plain text. Manual `.lrc/.txt` loading from v0.5.0 still works.
 
-### 🎤 Offline lyrics (LRC + TXT)
+**Android 11+ scoped-storage restriction:** root storage and `Download` folder cannot be granted with the folder picker. Choose a specific allowed music folder or use **Local file** to select a single `.lrc` in Downloads. There is no broad `MANAGE_EXTERNAL_STORAGE` permission. This app only reads the folder you authorize. Local automatic matching never sends data online.
 
-1. Play a track and open **Now Playing**.
-2. Tap **Lyrics** → **Load .lrc / .txt**.
-3. Select a **local** text file using Android's system picker (the picker may show other file types; choose `.lrc` or `.txt`).
-4. For a timestamped `.lrc`, the current line highlights automatically while the song plays. Multi-timestamp lines and `[offset:...]` are supported.
-5. For `.txt`, read scrollable **plain lyrics** (no synchronization).
-6. Lyrics are associated with that exact music-library track. The selected file URI is remembered across restarts/signed updates as long as Android can still access it.
-7. Tap **Change file** or **Remove** to update the selection. Original audio and lyric files are never modified.
+## New: optional online lyrics search
 
-**Important:** This version does not automatically find lyrics on the internet or automatically match `.lrc` files in music folders. The user chooses the file for each track. If a lyric file is moved/deleted, reselect it. No copyrighted lyrics are bundled with the app. `examples/demo-lyrics.lrc` contains an original demonstration file.
+1. Now Playing → **Lyrics** → **Online**.
+2. Review/edit song title and artist. Tap **Search lyrics**. Only these query terms are sent to `https://lrclib.net/api/search`.
+3. Select the correct match (synced or plain) → **Save**. The lyrics are saved within LokiTunes app-private storage and work offline afterward.
+4. Internet is not necessary for playback, normal lyrics viewing, or local matching. Lyrics search needs internet and depends on LRCLIB availability and rate limiting.
 
-### 🎚️ Sound settings
+No internet search is performed in the background. No music files are uploaded. Lyrics text is never bundled in LokiTunes source. Credits: **LRCLIB** (user-selected lyrics search). Follow applicable lyrics rights.
 
-- **Now Playing → Sound**: choose **0.75×, 1×, 1.25×, 1.5×, or 2×** playback speed. Speed preference persists across app restarts and signed upgrades and applies to the background Media3 playback service.
-- **Open device equalizer** asks Android to display the phone's **system audio effects panel**. Some phones don't have one, and some effects panels may not apply to LokiTunes; the app shows a message if none is found. **This is not a built-in multi-band EQ.** A custom EQ needs separate cross-device research/testing.
-- All existing playback controls, sleep timer, queue, folder navigation, in-app updater and Favorites are intended to remain unchanged.
+## Signed GitHub release (no Android Studio needed)
 
-## How to ship the signed update (no Android Studio)
+Use the **existing LokiTunes signing keystore/secrets from v0.3.0**. Never regenerate release keys. Use the PATCH ZIP on top of the latest v0.5.0 Git project.
 
-**KEEP the original LokiTunes signing keystore / GitHub Secrets from v0.3.x and v0.4.0.** Never create a replacement keystore for an existing installed user base. DO NOT uninstall the current signed LokiTunes; keep Favorites and other local data. You can optionally create a Favorites JSON backup.
+```bash
+git add -A
+git commit -m "feat: LokiTunes v0.6.0 Smart Lyrics"
+git push origin main
+```
 
-1. Extract the **v0.5.0 PATCH ZIP**, merge it into your existing LokiTunes Git repository, keeping paths intact. Do **not** extract the full-source ZIP into a different Git working directory unless deliberately replacing your project.
-2. Commit and push the code:
+Confirm **GitHub Actions build + unit tests are green**. Then tag the exact validated commit:
 
-   ```bash
-   git add -A
-   git commit -m "feat: LokiTunes v0.5.0 offline lyrics and sound settings"
-   git push origin main
-   ```
+```bash
+git tag v0.6.0
+git push origin v0.6.0
+```
 
-3. Open **GitHub → Actions** and make sure the **main** build is green, including `:app:testDebugUnitTest` and `:app:assembleDebug`. If it fails, **do not tag yet**; inspect the first compilation error.
-4. Confirm `app/build.gradle.kts` contains `versionName = "0.5.0"` and `versionCode = 7`. Then tag that exact tested commit:
+Check signed release APK `LokiTunes-v0.6.0-release.apk` in GitHub Releases. Update through **LokiTunes → Updates** from signed v0.5.0. No uninstall needed when signing certificate and package ID match; Favorites should remain.
 
-   ```bash
-   git tag v0.5.0
-   git push origin v0.5.0
-   ```
+## Validation before publishing
 
-5. Wait for the **tag-triggered signed build** and **Publish signed public GitHub Release** to both succeed. Confirm Releases contains **`LokiTunes-v0.5.0-release.apk`**, signed using the SAME certificate as the previously installed release.
-6. On your phone, open your **installed signed v0.4.0** → Updates → Download / Install. Approve Android's installer. After relaunch, Updates should display **v0.5.0 · Build 7**. Music and Favorites should remain.
+Run `:app:testDebugUnitTest` and `:app:assembleDebug` on GitHub Actions, then install/test the signed release on a phone. Test Music folder granting, one-level and nested matches, manual file picker, remote search success/failure, downloaded lyrics without Wi-Fi, and existing music playback, Favorites, and updater. **No full Android Gradle build was run in the local packaging environment.**
 
-**If the installer says package conflict, do NOT uninstall**: verify the installed APK and downloaded APK use the same signing certificate; use GitHub **Releases** APKs for updates, never debug artifacts from Actions.
+## Privacy and safety
 
-## Known limits / release gate
-
-- Parser and speed-preset pure-Kotlin smoke checks, XML/YAML/static inspection and ZIP integrity validation are performed for source distribution.
-- **A complete Android Gradle compilation and physical-device test have NOT been run here.** Only publish the tag after the actual GitHub Actions build succeeds. Test speed, LRC sync, background playback, Favorites and update installation on the phone before calling the release stable.
-- External equalizer support depends on the device, and opening the system panel without a specific ExoPlayer session ID does not guarantee effects will apply to LokiTunes.
-- User-selected `.lrc`/`.txt` documents are limited to 200k characters to avoid excessive memory use.
-
-## Project and release details
-
-- Workflow: `.github/workflows/android.yml` (unchanged from working v0.4.0).
-- New lyric parser: `app/src/main/java/com/lokij/lokitunes/lyrics/LrcParser.kt`.
-- New lyric URI persistence: `app/src/main/java/com/lokij/lokitunes/lyrics/LyricsStore.kt`.
-- UI: `app/src/main/java/com/lokij/lokitunes/ui/LokiApp.kt`.
-- Playback speed persistence: `ui/LokiViewModel.kt` and `playback/MusicPlaybackService.kt`.
-- Tests: `app/src/test/java/com/lokij/lokitunes/{lyrics,ui}`.
-- License: MIT. Keep signing keys, `.jks` files, passwords and decoded secrets **out of public GitHub**.
+- No broad storage privileges, server account, ads or analytics.
+- Optional online requests are user-triggered, to LRCLIB only.
+- Songs never uploaded.
+- Local cached lyrics are removed if the app is uninstalled.
+- Signing passwords/keystores should NEVER be committed to public GitHub.
+- MIT licensed.

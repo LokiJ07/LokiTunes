@@ -12,6 +12,7 @@ class MusicRepository(private val context: Context) {
         val columns = mutableListOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.DISPLAY_NAME,
             MediaStore.Audio.Media.ARTIST,
             MediaStore.Audio.Media.ALBUM,
             MediaStore.Audio.Media.ALBUM_ID,
@@ -38,6 +39,7 @@ class MusicRepository(private val context: Context) {
             fun index(key: String) = cursor.getColumnIndexOrThrow(key)
             val idIdx = index(MediaStore.Audio.Media._ID)
             val titleIdx = index(MediaStore.Audio.Media.TITLE)
+            val nameIdx = index(MediaStore.Audio.Media.DISPLAY_NAME)
             val artistIdx = index(MediaStore.Audio.Media.ARTIST)
             val albumIdx = index(MediaStore.Audio.Media.ALBUM)
             val albumIdIdx = index(MediaStore.Audio.Media.ALBUM_ID)
@@ -68,7 +70,8 @@ class MusicRepository(private val context: Context) {
                     albumId = cursor.getLong(albumIdIdx),
                     durationMs = cursor.getLong(durationIdx).coerceAtLeast(0L),
                     folderPath = folder,
-                    dateAdded = cursor.getLong(addedIdx)
+                    dateAdded = cursor.getLong(addedIdx),
+                    fileName = cursor.getString(nameIdx).orEmpty()
                 )
             }
         }

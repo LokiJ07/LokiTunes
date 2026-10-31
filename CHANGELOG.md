@@ -1,24 +1,16 @@
-# LokiTunes Changelog
+# LokiTunes release notes
 
-## v0.5.0 — Sound & Personalization
+## v0.6.0 — Smart Lyrics
 
-- Offline `.lrc` synchronized lyric display (timestamps, offset, multi-tag lines), with auto-highlight and scrolling.
-- `.txt` plain-text lyrics display; user chooses files in system document picker.
-- Persist selected lyric document access per track across app restarts and compatible signed upgrades.
-- Sound bottom sheet with playback speed presets 0.75×, 1×, 1.25×, 1.5×, 2×.
-- Persist and restore playback speed in Media3 playback service.
-- Device equalizer *shortcut* where an Android sound-effects panel is available (not an in-app EQ).
-- v0.5.0 build 7; package, music scanner, Favorites, release signing, GitHub updater preserved.
-- Added pure parser/speed unit tests and original demo LRC file.
+- **Offline auto-match** of `.lrc` and `.txt` in a user-approved folder tree; exact audio filename or song-title basename, case-insensitive.
+- **Optional LRCLIB search** — manual action only, edit title/artist, inspect results and select a match, save lyrics to private local cache. No audio upload.
+- **Offline replay** of downloaded lyrics, synced highlighting with existing LRC parser.
+- **Manual local selection retained** from v0.5.0, plus ability to remove folder access.
+- Version **0.6.0**, build **8**; preserves `com.lokij.lokitunes`, Favorites, playback, equalizer shortcut and signed in-app updater.
 
-## v0.4.0 — Audio Experience
+## Known limitations
 
-- Dynamic accent colors from locally embedded artwork with Midnight Aurora fallback.
-- ±10-second seek buttons, Play Next / Add to Queue actions, Clear upcoming queue.
-- Signed GitHub release update path preserved.
-
-## Earlier releases
-
-- v0.3.x: GitHub Releases in-app updater and signed release pipeline; version display.
-- v0.2.x: Queue, sleep timer, Favorites sorting and JSON backup/restore.
-- v0.1.x: Base offline library, folder explorer, favorites, playback and Midnight Aurora UI.
+- Automatic local lookup is scoped to **one folder that the user chooses** (plus matching subdirectories), not all protected Android storage. Android 11+ does not allow tree grants to the storage root or Downloads root. For Downloads, choose individual lyric documents manually or move them into Music.
+- LRCLIB may lack or misidentify songs: always select the correct result; online requests need internet. Results may be rate-limited.
+- Offline cached lyrics live in app-private storage; uninstalling the app removes them.
+- Copyrighted lyrics are not included in this repository or APK.
