@@ -1,65 +1,101 @@
-# LokiTunes 🎧 — v0.2.0
+# LokiTunes 🎧 — v0.3.0 (GitHub Releases + in-app updater)
 
-**Your music. Your rules.** A fully offline, free, open-source Android music player with the original **Midnight Aurora** purple/cyan theme.
+**Your music. Your rules.** Native Android offline music player with Midnight Aurora UI, folder music navigation, favorites, play queue and sleep timer. Free/open-source (MIT). App ID `com.lokij.lokitunes`, minimum API 26 (Android 8).
 
-Maintained by **LokiJ07**. Minimum supported Android: **8.0 (API 26)**. This repository contains **source code**, not copyrighted music. License: MIT.
+## What's new in 0.3.0
 
-## What's new in v0.2.0
+- Small **Updates** button in the app header, with a colored badge when a newer stable GitHub Release is available.
+- Silent *update check* at app launch when internet is available; failure to connect is ignored and **offline music playback works as before**. Tap the button for manual checks.
+- **Download update** inside the app, with progress, published GitHub asset SHA-256 verification, APK package/version verification, and a standard **Android install confirmation**. No background forced installation.
+- GitHub Actions builds/tests on push and **automatically publishes a signed release APK for a `vX.Y.Z` tag** (only after four signing secrets are configured).
+- All 0.2.0 audio, queue, Favorites backup/restore and UI functions are retained.
 
-- **Now Playing → Queue:** see current playback queue, tap a song to jump to it, move items up/down, or remove them. Queue edits operate on the actual Media3 player, not a fake list.
-- **Now Playing → Sleep timer:** choose 10, 20, 30, 45, 60, or 90 minutes; live remaining-time indicator and cancel action. The timer runs in `MusicPlaybackService`, not just the screen, while Android allows the service to run.
-- **Favorites sorting:** A–Z, recently liked, artist. Favorites from v0.1.0 continue to work if the new APK is installed **over** the old app using the **same signing certificate**.
-- **Favorites → Backup/Restore:** export a small JSON file and import it later. Import merges known matching songs with existing favorites; it does not import audio files. Helps with future signing changes, device moves, or app reinstalls **after** a backup is made.
-- v0.1.0's functioning library scanning, folder list/explorer, album/artist lists, search, playback, mini-player, media notification, and UI remain unchanged.
+> **Music remains offline.** Internet access is needed only when checking or downloading an app update. Nothing sends your audio, favorites, listening history, or file list to a server.
 
-### Important limitations
+## IMPORTANT: Before upgrading an existing debug install
 
-- The sleep timer is best-effort: Android may kill playback services under aggressive battery-management settings. If the service/process is terminated unexpectedly, the timer cannot run until the service restarts. It pauses playback rather than powering off the phone.
-- Queue edits are for the **current playback session**. Replacing the play queue by selecting a different song list resets them. Queue isn't yet persisted across Android process death.
-- **Favorites restore** first matches stored MediaStore URI IDs, then matches title + artist + folder + duration. If files moved, changed metadata or are missing, some favorites may not match. Export does not include MP3 files.
-- Songs inside inaccessible/protected or unindexed folders may not be detected by Android MediaStore. Android controls audio decoding support.
-- Original v0.1.0 Favorites do **not** have date records. Their `Recently liked` order may default to alphabetical until favorites are newly toggled. Existing favorite statuses remain.
+The user's earlier GitHub Actions APK (`app-debug.apk`) was likely signed with a **temporary runner debug key**. Android will not install a stable release signed by a different key on top of it. **The first move from debug to a stable signed release can require uninstalling the debug app, which erases app data.**
 
-## GitHub-only build (no Android Studio needed)
+If you have v0.2.0 installed, go to **Favorites → Backup** first and save the JSON file outside the app. After installing the signed v0.3.0 release, restore via **Favorites → Restore**. If your currently installed app is v0.1.0 without backup/restore, save favorite titles manually before uninstalling. Music files in shared device storage are not deleted by uninstalling LokiTunes. Never uninstall before securing the Favorites you want to keep.
 
-1. Extract the **full source ZIP** and open the extracted `LokiTunes` project, or apply the **patch ZIP** over an existing LokiTunes repository. **Keep the `.github` folder.**
-2. Commit and push all updated files to the `main` branch. GitHub Actions will trigger **LokiTunes Android Build**.
-3. Open GitHub **Actions → latest green build → Artifacts**, then download and extract `LokiTunes-v0.2.0-debug-apk` to get `app-debug.apk`.
-4. Install on your Android phone and verify playback, queue, timer, favorites, and background operation.
+Once you start using a stable signed APK, **keep the SAME private keystore, package ID, and increasing versionCode for every subsequent release**. Then the in-app updater can offer normal install-over-the-old-app updates with preserved data. If Android says "App not installed", do not uninstall first without a backup.
 
-From Git Bash inside the existing repository after applying the patch:
+## Step 1 — Upload this project (no Android Studio needed)
+
+Apply the PATCH ZIP over the existing `LokiTunes` repository, preserving paths and `.github/workflows/android.yml`, then:
 
 ```bash
 git add -A
-git commit -m "feat: LokiTunes v0.2 queue sleep timer and favorites backup"
+git commit -m "feat: LokiTunes v0.3.0 in-app updates and signed releases"
 git push origin main
 ```
 
-### ⚠️ Signing and existing Favorites — read before installing
+Open **GitHub → Actions** and confirm the push build is green. A passing Kotlin compilation and unit tests is required before release.
 
-Every GitHub-hosted runner typically generates a **different debug signing key**. Android **will not update** a v0.1.0 debug APK with a v0.2.0 APK signed by a *different* key. You may get **App not installed** due to signature mismatch. **Do not uninstall the current app if you need to retain its stored Favorites.**
+## Step 2 — Generate your OWN permanent release key
 
-For reliable future updates, generate a **private release signing keystore** on your machine and store its base64 contents plus credentials as GitHub Actions secrets. The existing workflow supports:
+Create and permanently back up this key **on a computer you control**. Do not paste the password or keystore into ChatGPT or a public GitHub issue. You need a JDK with `keytool` available (a JDK can be installed without Android Studio).
 
-- `LOKITUNES_KEYSTORE_BASE64`
-- `LOKITUNES_KEYSTORE_PASSWORD`
-- `LOKITUNES_KEY_ALIAS`
-- `LOKITUNES_KEY_PASSWORD`
+Example (Git Bash or terminal, change the passwords when prompted):
 
-Once these four secrets are configured, GitHub Actions also uploads `LokiTunes-v0.2.0-signed-release`. Install release builds signed with **the same keystore** for all subsequent updates. Switching **once** from an existing debug installation to a signed release still requires uninstalling the debug APK (and clears app-local data). Since v0.1.0 has no backup button, **back up important Favorites manually before any uninstall** (for example, a screenshot or list of liked songs). From v0.2.0 onward, use the new **Favorites → Backup** button before reinstalling.
+```bash
+keytool -genkeypair -v -keystore lokitunes-release.jks -alias lokitunes -keyalg RSA -keysize 3072 -validity 10000
+```
 
-Never commit the keystore, credentials or APK signing secrets to the public repository. Debug artifacts should be considered development builds, not official security-verified releases.
+Keep `lokitunes-release.jks` somewhere safe **outside the Git repo** and make a secure offline backup. If you lose this private key, you cannot normally update existing installed releases without requiring reinstall.
 
-## Architecture
+In Windows PowerShell, copy its base64 to your clipboard (change the path to your actual file):
 
-- Kotlin 2.3.21, Compose/Material3, Android Gradle Plugin 8.13.2, Gradle 8.13 / Java 17 / compile SDK 36.
-- Media3 ExoPlayer 1.11.1 and `MediaSessionService` for background audio playback.
-- MediaStore for indexed local songs; app-only SharedPreferences for Favorites and sleep-timer deadline.
-- Android Storage Access Framework document pickers for backup/restore. No account, Internet permission, ads, telemetry, cloud server, database, or remote music download.
-- Unit tests under `app/src/test` include folder helper behavior and timer calculations.
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\lokitunes-release.jks")) | Set-Clipboard
+```
+
+In GitHub go to **Repository → Settings → Secrets and variables → Actions → New repository secret** and create these *exactly*:
+
+| Secret | Value |
+|---|---|
+| `LOKITUNES_KEYSTORE_BASE64` | Base64 string from PowerShell clipboard |
+| `LOKITUNES_KEYSTORE_PASSWORD` | Password you set for `.jks` |
+| `LOKITUNES_KEY_ALIAS` | `lokitunes` (or your chosen alias) |
+| `LOKITUNES_KEY_PASSWORD` | Password of the signing key |
+
+Never commit `.jks`, `.keystore`, `.p12`, or passwords. `.gitignore` protects common signing filenames, but you should still check `git status` before pushing. Avoid exposing signing key in screenshots or logs.
+
+## Step 3 — Publish v0.3.0 publicly on GitHub Releases
+
+After a **green main build** and all four secrets are set:
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+The tag workflow runs tests, checks that the tag matches the app versionName, signs and verifies a **release** APK, then uses GitHub's built-in `GITHUB_TOKEN` via `gh release create` to publish:
+
+`LokiTunes-v0.3.0-release.apk`
+
+Users can download that file from **GitHub → Releases**. This is public distribution **on GitHub**, not a Google Play Store listing.
+
+**Do not publish `app-debug.apk` as the public update package.** The automatic updater intentionally ignores debug artifacts and only recognizes signed GitHub Release assets with matching tag names. It also requires GitHub to report the uploaded asset SHA-256 digest before download/install. It may take a moment for the Releases API to include a freshly published asset digest.
+
+If the `publish` job gets a 403, check **Repository → Settings → Actions → General → Workflow permissions** and allow read/write workflow token permissions where your GitHub policy permits, then rerun. The workflow already requests `contents: write` only for the publish job.
+
+## Step 4 — Verify your updater works (test the NEXT release)
+
+1. Install the **signed** v0.3.0 Release APK (after safely handling prior debug Favorites).
+2. Open LokiTunes; verify music and Favorites. Tap the new update icon: it should say you're up to date (v0.3.0 is the latest public release).
+3. For the next release, update `versionCode` to **4** and `versionName` to `"0.3.1"` in `app/build.gradle.kts`, commit/push, then push `v0.3.1` tag.
+4. Open v0.3.0: a notification dialog should offer v0.3.1; select **Download update → Install update** and confirm Android's installer. Android 8+ may request **Allow from this source** on first install: enable it, return to LokiTunes, and tap Install again.
+5. Confirm new version is installed **over** v0.3.0 with Favorites remaining. Confirm offline audio still works with Wi-Fi/data off.
+
+## Limits and safety
+
+- Checks only `https://api.github.com/repos/LokiJ07/LokiTunes/releases/latest` (public, non-draft, non-prerelease) and expects a named asset `LokiTunes-vX.Y.Z-release.apk` in its GitHub Release.
+- Rejects unexpected asset name/URL, missing SHA-256 digest, checksum mismatch, wrong package name, not-newer APK versionCode, or APK larger than 150 MB. Android's installer independently validates the signing certificate for installed upgrades.
+- Update checks do not run continuously, or when the app is closed. The downloader runs while the app is in use; Android may stop it if the process is killed. Reopening and retrying is safe.
+- Android requires approval for package installation. For non-Play distribution, the app declares `REQUEST_INSTALL_PACKAGES`. **Do not submit this implementation unchanged to Google Play**: the Play policy restricts use of this permission for self-updates. For Play distribution, use Google Play In-App Updates instead.
+- If your GitHub repository owner/name changes, update the constants in `app/src/main/java/com/lokij/lokitunes/update/UpdateRepository.kt` and the "View releases" URL in `ui/LokiApp.kt`.
 
 ## Inspect → Improve → Test → Fix
 
-v0.2.0 was based directly on the user's **working v0.1.0 GitHub build**. Config/manifest versions, Kotlin source structure, and ZIP file integrity were inspected. Android SDK/Gradle are **not available** in the authoring environment; the **next GitHub Actions run** will verify actual Kotlin compilation, unit tests, and APK creation. Do not call the new build production-tested until it has passed both GitHub Actions and a real Android phone smoke test.
-
-If the build fails, open the failing GitHub Actions step, locate the first Gradle error, and share it to fix the root cause. If it passes, test `Play → Queue → Move/Remove`, `Sleep Timer → Cancel`, Favorites sorting, Backup/Restore, and playback with screen off.
+The existing v0.2.0 Material3 opt-in fix was retained. Manifest / GitHub Actions YAML / APK naming and source structure were statically checked, and `VersionNumberTest` covers semantic version comparisons. **Android SDK/Gradle compilation and real-device updater testing are still required via GitHub Actions and the phone**. A green source build does not establish that published APK installation works; test with the second signed release as described above.

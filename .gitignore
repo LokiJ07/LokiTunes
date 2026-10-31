@@ -10,3 +10,11 @@ local.properties
 *.aab
 .DS_Store
 .kotlin/
+
+# Never expose any local APK signing material
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key

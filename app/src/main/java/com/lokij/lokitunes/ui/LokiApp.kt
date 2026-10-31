@@ -1,5 +1,7 @@
 package com.lokij.lokitunes.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import androidx.activity.compose.BackHandler
@@ -34,6 +36,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lokij.lokitunes.update.UpdatePhase
+import com.lokij.lokitunes.update.UpdateUiState
+import com.lokij.lokitunes.update.UpdateViewModel
 import com.lokij.lokitunes.data.MusicPaths
 import com.lokij.lokitunes.data.MusicTrack
 import com.lokij.lokitunes.ui.theme.*
@@ -51,6 +57,34 @@ fun LokiApp(state: LokiUiState, vm: LokiViewModel) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var showPlayer by rememberSaveable { mutableStateOf(false) }
     val currentTrack = state.tracks.firstOrNull { it.id == state.currentTrackId }
+    val updater: UpdateViewModel = viewModel()
+    val updateState by updater.state.collectAsState()
+    val context = LocalContext.current
+    var showUpdateDialog by rememberSaveable { mutableStateOf(false) }
+    var announcedRelease by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(Unit) { updater.checkForUpdates(silent = true) }
+    LaunchedEffect(updateState.phase, updateState.release?.tag) {
+        val release = updateState.release
+        if (updateState.phase == UpdatePhase.AVAILABLE && release != null && release.tag != announcedRelease) {
+            announcedRelease = release.tag
+            showUpdateDialog = true
+        }
+    }
+    if (showUpdateDialog) {
+        UpdateDialog(
+            state = updateState,
+            onClose = { showUpdateDialog = false },
+            onCheck = { updater.checkForUpdates() },
+            onDownload = { updater.downloadRelease() },
+            onInstall = { updater.requestInstallation(context) },
+            onReleases = {
+                runCatching {
+                    context.startActivity(Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://github.com/LokiJ07/LokiTunes/releases")))
+                }
+            }
+        )
+    }
 
     BackHandler(enabled = showPlayer) { showPlayer = false }
     if (showPlayer && currentTrack != null) {
@@ -87,7 +121,16 @@ fun LokiApp(state: LokiUiState, vm: LokiViewModel) {
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            AppHeader(onRefresh = vm::refresh, busy = state.isScanning)
+            AppHeader(
+                onRefresh = vm::refresh,
+                busy = state.isScanning,
+                hasUpdate = updateState.phase == UpdatePhase.AVAILABLE || updateState.phase == UpdatePhase.READY,
+                onUpdates = {
+                    showUpdateDialog = true
+                    if (updateState.phase == UpdatePhase.IDLE || updateState.phase == UpdatePhase.ERROR ||
+                        updateState.phase == UpdatePhase.CURRENT) updater.checkForUpdates()
+                }
+            )
             if (state.error != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
@@ -124,7 +167,68 @@ fun LokiApp(state: LokiUiState, vm: LokiViewModel) {
 }
 
 @Composable
-private fun AppHeader(onRefresh: () -> Unit, busy: Boolean) {
+private fun UpdateDialog(
+    state: UpdateUiState,
+    onClose: () -> Unit,
+    onCheck: () -> Unit,
+    onDownload: () -> Unit,
+    onInstall: () -> Unit,
+    onReleases: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("LokiTunes updates 💜", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                when (state.phase) {
+                    UpdatePhase.CHECKING -> {
+                        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                        Text("Checking GitHub Releases…")
+                    }
+                    UpdatePhase.CURRENT -> Text("You're up to date! Your music still works fully offline.")
+                    UpdatePhase.AVAILABLE, UpdatePhase.DOWNLOADING, UpdatePhase.READY -> {
+                        Text("New signed release: ${state.release?.tag.orEmpty()}", color = Lavender,
+                            fontWeight = FontWeight.SemiBold)
+                        val notes = state.release?.notes.orEmpty().trim()
+                        if (notes.isNotEmpty()) Text(notes.take(600), maxLines = 10)
+                        if (state.phase == UpdatePhase.DOWNLOADING) {
+                            LinearProgressIndicator(progress = { state.progress / 100f }, modifier = Modifier.fillMaxWidth())
+                            Text("Downloading ${state.progress}%…")
+                        }
+                        if (state.phase == UpdatePhase.READY) Text("APK verified. Tap Install to continue in Android's installer.")
+                    }
+                    UpdatePhase.ERROR -> Text(state.message.ifEmpty { "Could not check for updates." }, color = Color(0xFFFFBEC5))
+                    UpdatePhase.IDLE -> Text("Check the latest public release on GitHub.")
+                }
+                if (state.message.isNotBlank() && state.phase == UpdatePhase.READY) {
+                    Text(state.message, color = Mint, fontSize = 12.sp)
+                }
+                Text("Only update checks/downloads require internet. Music playback stays offline.",
+                    fontSize = 12.sp, color = SoftText)
+                TextButton(onClick = onReleases, contentPadding = PaddingValues(0.dp)) {
+                    Text("View releases on GitHub", color = Mint, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            when (state.phase) {
+                UpdatePhase.AVAILABLE -> Button(onClick = onDownload) { Text("Download update") }
+                UpdatePhase.READY -> Button(onClick = onInstall) { Text("Install update") }
+                UpdatePhase.ERROR -> {
+                    if (state.release != null) Button(onClick = onDownload) { Text("Retry download") }
+                    else Button(onClick = onCheck) { Text("Retry") }
+                }
+                UpdatePhase.CURRENT, UpdatePhase.IDLE -> TextButton(onClick = onCheck) { Text("Check again") }
+                else -> Unit
+            }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text("Close") } },
+        containerColor = NightPanel
+    )
+}
+
+@Composable
+private fun AppHeader(onRefresh: () -> Unit, busy: Boolean, hasUpdate: Boolean, onUpdates: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 14.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -137,6 +241,14 @@ private fun AppHeader(onRefresh: () -> Unit, busy: Boolean) {
         Column(Modifier.weight(1f)) {
             Text("LokiTunes", fontWeight = FontWeight.ExtraBold, fontSize = 21.sp, color = Color.White)
             Text("OFFLINE · YOUR SOUNDTRACK", fontSize = 9.sp, letterSpacing = 1.7.sp, color = Mint)
+        }
+        IconButton(onClick = onUpdates) {
+            Box {
+                Icon(Icons.Default.SystemUpdate, contentDescription = "Check for LokiTunes updates", tint = if (hasUpdate) Mint else SoftText)
+                if (hasUpdate) {
+                    Box(Modifier.size(8.dp).align(Alignment.TopEnd).clip(CircleShape).background(Lavender))
+                }
+            }
         }
         IconButton(onClick = onRefresh) {
             if (busy) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
