@@ -1,57 +1,124 @@
-# LokiTunes 🎧 — v1.0.0 Stable Candidate
+<div align="center">
 
-**Your Music. Your Rules.** Free, open-source, offline-first Android music player with the Midnight Aurora purple/cyan theme. Android 8.0+ (`minSdk 26`). No login, ads, or subscriptions.
+# 🎧 LokiTunes
 
-> **Release status:** Source candidate prepared. Only call the release stable after GitHub Actions passes and the on-device smoke tests in `TEST_PLAN.md` pass. Do not tag until then.
+### Your Music. Your Rules.
 
-## Main features
+**A free, open-source, offline-first music player for Android.**
 
-- Device audio via Android MediaStore; Songs, folder browsing, Albums and Artists.
-- Favorites and local custom playlists, sorting, duplicate suggestions (no deletions).
-- Media3 background playback, queue, shuffle/repeat, lock-screen/Bluetooth controls, sleep timer.
-- Offline `.lrc`/`.txt` lyrics; optional online lyrics search through LRCLIB when the user requests it; saved lyrics work offline.
-- Sound Studio: device-dependent equalizer / bass effect, speed presets and dynamic album-art colors.
-- Signed GitHub Releases updater (requires internet for checking/downloading updates, but music remains offline).
+*Discover your music. Organize it your way. Enjoy every beat.*
 
-## Improvements for v1.0.0
+[![Release](https://img.shields.io/github/v/release/LokiJ07/LokiTunes?display_name=tag&label=release)](https://github.com/LokiJ07/LokiTunes/releases/latest)
+[![Android](https://img.shields.io/badge/Android-8.0%2B-39C5BB?logo=android&logoColor=white)](docs/INSTALLATION.md)
+[![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-B48DFE?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
+[![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
+[![No Ads](https://img.shields.io/badge/Ads-None-1CBDB0)](#-why-lokitunes)
 
-- Production version metadata: `1.0.0`, `versionCode = 12` (up from v0.9.0 build 11).
-- **Signing compatibility preflight:** before opening the Android installer, the updater compares the installed app's signing certificate with the downloaded APK's certificate. On a mismatch, it refuses installation and shows a useful error message rather than proceeding to a package-conflict dialog. Same-key updates behave as before. Android is still the final authority on signature validity.
-- Added regression unit tests for same-key, wrong-key and missing-signature cases.
-- Documented quality gates, privacy, and signing-key recovery expectations for the first stable release.
+**[⬇️ Download latest APK](https://github.com/LokiJ07/LokiTunes/releases/latest)** · **[📘 Installation guide](docs/INSTALLATION.md)** · **[🔒 Privacy](docs/PRIVACY.md)** · **[🐛 Report an issue](https://github.com/LokiJ07/LokiTunes/issues/new/choose)**
 
-No new runtime permissions, no changed `applicationId`, no migration of Favorites, playlist or lyrics storage, and no changes to the playback engine in this release.
+</div>
 
-## Develop, build and publish (GitHub-only workflow)
+---
 
-1. Extract the **PATCH ZIP** into the root of the existing GitHub repository, retaining directory structure.
-2. Push normally:
+## ✨ Why LokiTunes?
 
-```bash
-git add -A
-git commit -m "release: prepare LokiTunes v1.0.0 stability update"
-git push origin main
-```
+LokiTunes puts **your own music library** first. It plays music already saved on your Android device, lets you browse real folders, and keeps Favorites and custom playlists locally. There is **no account, subscription, or advertising**.
 
-3. Confirm the **main branch GitHub Actions job is green**, including unit tests and debug build. The existing workflow also produces a **signed release APK artifact on main** when signing secrets are configured. Use **that signed artifact** (not the debug artifact) on a test phone to verify install-over-update before public tagging.
-4. **Confirm real device results** using [`TEST_PLAN.md`](TEST_PLAN.md), including Favorites/playlists retention. Fix regressions before public tagging. To separately test the *in-app download path* after publishing, keep another device on signed v0.9.0 or test the next signed update.
-5. When verified, publish **with the original signing key** stored in the existing `LOKITUNES_*` GitHub Actions secrets:
+The signature **Midnight Aurora** look pairs a near-black interface with purple and cyan accents. Album artwork can influence the Now Playing colors; tracks without artwork use a gradient fallback.
 
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
+**Music playback works without internet.** Internet is used only for optional online lyrics and checking/downloading app updates. Update checks can occur automatically when the app starts; no music files are uploaded.
 
-6. Check that the **Publish signed public GitHub Release** job passes and contains `LokiTunes-v1.0.0-release.apk`.
-7. From the **installed, signed v0.9.0 release**, use LokiTunes → Updates → Download → Install. **Do not uninstall.** Verify Favorites and playlists remain intact.
+## 📸 Screenshots
 
-If the certificate preflight says the signing key changed, do **not** generate a new keystore or uninstall. Restore the **original** signing secret/keystore and re-release a properly signed APK after diagnosis.
+*Captured from LokiTunes v1.0.0 running on an Android device. Music titles and library counts are examples from the test device.*
 
-## Privacy and data
+| Home | Songs | Folders |
+|:---:|:---:|:---:|
+| <img src="assets/screenshots/home.jpg" alt="Home dashboard and quick access" width="220"> | <img src="assets/screenshots/songs.jpg" alt="Searchable offline songs library" width="220"> | <img src="assets/screenshots/folders.jpg" alt="Folder list and explorer" width="220"> |
 
-- Playback, audio library scanning, playlists, favorites and saved lyrics are stored/handled on device.
-- Network access is used for optional GitHub update checks and on-demand LRCLIB lyrics search; online requests reveal the song title and artist to the third-party lyrics service.
-- Imported/exported Favorites JSON is metadata only, not MP3 files. App uninstall can remove private local data; keep your exports if important.
-- Some folders/files cannot be read due to Android scoped-storage restrictions. No automatic download of music.
+| Favorites | Library | Now Playing |
+|:---:|:---:|:---:|
+| <img src="assets/screenshots/favorites.jpg" alt="Favorites and backup or restore" width="220"> | <img src="assets/screenshots/library.jpg" alt="Albums, artists and playlists library" width="220"> | <img src="assets/screenshots/now-playing.jpg" alt="Now Playing and album color gradient" width="220"> |
 
-See [TEST_PLAN.md](TEST_PLAN.md) and [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md). Source is licensed under MIT (`LICENSE`). Do not commit `.jks`, `.keystore`, passwords, or Base64 secrets.
+| Playback controls | Sound Studio | Smart Lyrics |
+|:---:|:---:|:---:|
+| <img src="assets/screenshots/playback-controls.jpg" alt="Music playback controls and shortcuts" width="220"> | <img src="assets/screenshots/sound-studio.jpg" alt="Equalizer and bass boost Sound Studio" width="220"> | <img src="assets/screenshots/smart-lyrics.jpg" alt="Smart Lyrics bottom sheet" width="220"> |
+
+## 🎵 Features
+
+| Experience | What you get |
+|:--|:--|
+| **Offline listening** | Play indexed audio files stored on your Android device; no streaming account required. |
+| **Library browsing** | Songs, albums, artists, folder list and folder explorer. |
+| **Find your music** | Search and sort songs; inspect possible duplicate entries without deleting files. |
+| **Make it yours** | Favorites, custom playlists, backup/restore for Favorites. |
+| **Playback controls** | Mini-player, playback queue, play next, shuffle, repeat, seek, sleep timer. |
+| **Background audio** | Media controls while using other apps, including supported lock-screen and Bluetooth controls. |
+| **Smart Lyrics** | Open local `.lrc`/`.txt` files, auto-match accessible lyric folders, or search LRCLIB on demand and save results for offline use. |
+| **Sound Studio** | Device-dependent equalizer presets, custom audio bands, bass boost, and playback speed controls. |
+| **Color & design** | Midnight Aurora UI, album-art accent colors, and artwork-free gradient fallback. |
+| **Signed updates** | Check GitHub Releases, download a signed APK and hand off to the Android installer with user approval. |
+
+> **Availability varies:** Some audio effects depend on device support; some folders are restricted by Android storage rules. Online lyric availability depends on LRCLIB and applicable rights. See [FAQ](docs/FAQ.md) and [Known Issues](KNOWN_ISSUES.md).
+
+## 📲 Download & install
+
+1. You need **Android 8.0 (API 26) or later**.
+2. Open the **[latest GitHub Release](https://github.com/LokiJ07/LokiTunes/releases/latest)**.
+3. Under **Assets**, download the official **`LokiTunes-vX.Y.Z-release.apk`** file.
+4. Open the APK and approve Android's installation prompt. You may need to enable **Install unknown apps** for the app that opened the APK.
+5. Launch LokiTunes and grant the music-library permission when prompted.
+
+**Use the signed APK from GitHub Releases, not a debug artifact from GitHub Actions.** Debug builds can have incompatible signing certificates. Read the [installation and update guide](docs/INSTALLATION.md) for full details.
+
+## 🔄 Updates without losing your library
+
+Installed from a **signed GitHub Release**? LokiTunes can detect a newer public release and guide you through downloading and installing it. The Android installer must still request your approval.
+
+For normal install-over updates, the newer APK must use **the same signing certificate and package ID** and have a higher `versionCode`. **Do not uninstall** to update; doing so can delete local playlists, Favorites and saved lyrics.
+
+## 🔒 Privacy by design
+
+- **No account** and **no advertising or developer-operated analytics** in the v1.0.0 source.
+- Your music files are accessed on device, not uploaded by LokiTunes.
+- Favorites, playlists, preferences and saved lyrics are stored locally.
+- The app **checks GitHub for updates** (including a startup check) and contacts **LRCLIB only when you request an online lyrics search**. As with normal HTTPS requests, those services receive technical connection information; lyric searches send the title and artist if available.
+- Optional Favorites exports are files you explicitly save.
+
+Read the complete **[Privacy Policy](docs/PRIVACY.md)**.
+
+## ⚙️ Built with
+
+**Kotlin · Jetpack Compose · Android Media3 / ExoPlayer · Android MediaStore · Android audio effects · GitHub Actions & Releases**
+
+- **Package ID:** `com.lokij.lokitunes`
+- **Minimum Android version:** 8.0 (API 26)
+- **Source license:** [MIT](LICENSE)
+- **Development:** [Contributing guide](CONTRIBUTING.md) · [Issue tracker](https://github.com/LokiJ07/LokiTunes/issues)
+
+The app is independent software and is not affiliated with Spotify or any music streaming service.
+
+## 🗺️ Roadmap & feedback
+
+LokiTunes v1.0.0 is its first public milestone, not a promise that every Android phone has been tested. Feature requests and reproducible bugs are welcome via [GitHub Issues](https://github.com/LokiJ07/LokiTunes/issues).
+
+Current priorities: accessibility polish, more device-compatibility tests, and stability improvements. For already-known caveats see [Known Issues](KNOWN_ISSUES.md).
+
+## 📄 Project information
+
+- [Installation & updates](docs/INSTALLATION.md)
+- [Privacy Policy](docs/PRIVACY.md)
+- [Frequently Asked Questions](docs/FAQ.md)
+- [v1.0.0 release notes](docs/RELEASE_NOTES_v1.0.0.md)
+- [Contributing](CONTRIBUTING.md)
+- [Known Issues](KNOWN_ISSUES.md)
+- [License](LICENSE)
+
+---
+
+<div align="center">
+
+**Made with 💜 by [LokiJ07](https://github.com/LokiJ07)**  
+**LokiTunes — Your Music. Your Rules. 🎧**
+
+</div>

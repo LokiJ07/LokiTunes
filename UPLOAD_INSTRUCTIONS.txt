@@ -1,0 +1,21 @@
+LOKITUNES v1.0.0 — PUBLIC LAUNCH DOCUMENTATION OVERLAY
+
+This ZIP contains documentation, GitHub issue templates, and renamed, optimized copies
+of 9 phone screenshots supplied for this launch package. No Android source code,
+Gradle build files, app version, signing keys, or workflow files are modified.
+
+1. Extract this ZIP into the ROOT of your existing LokiTunes repository.
+2. Replace README.md if asked and keep the original LICENSE.
+3. Review assets/screenshots and docs/PRIVACY.md before public sharing.
+4. Run from Git Bash:
+   git status
+   git add README.md CONTRIBUTING.md KNOWN_ISSUES.md docs assets .github/ISSUE_TEMPLATE
+   git diff --cached --stat
+   git commit -m "docs: launch LokiTunes v1.0.0 public showcase"
+   git push origin main
+5. On GitHub, edit the EXISTING v1.0.0 release description and paste the
+   contents of docs/RELEASE_NOTES_v1.0.0.md.
+
+DO NOT create another v1.0.0 tag. No APK rebuild is required for documentation.
+
+Suggested GitHub About description and topics: docs/PUBLIC_LAUNCH_CHECKLIST.md
