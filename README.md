@@ -1,56 +1,44 @@
-# LokiTunes 🎧 — v0.8.0 Premium Audio
+# LokiTunes 🎧 — v0.9.0 Midnight Aurora Polish
 
-Midnight Aurora • Free • Open source • Offline-first Android music player. **Android 8+** (minSdk 26).
+Offline-first, free, open-source native Android music player (Android 8+, `minSdk 26`).
 
-## New: Sound Studio
+## What's new in 0.9.0
 
-1. Play any song and open **Now Playing → Sound**.
-2. Toggle **Enable equalizer** (off by default for safety and compatibility).
-3. Select **Flat / Bass / Vocal / Pop / Rock / Custom**.
-4. Adjust one of the five sliders (60 Hz, 230 Hz, 910 Hz, 4 kHz, 14 kHz) to switch into **Custom** mode. Values are limited to ±6 dB. Available physical equalizer bands are determined by Android; LokiTunes maps the five-point curve to each supported band and clamps within its advertised gain range.
-5. Adjust **Bass boost** from 0 to 100% if your phone supports it.
-6. Playback-speed controls and the **Open device equalizer** optional shortcut remain available.
+- **Smoother navigation:** short crossfade transitions between tabs; the Songs and Favorites list remember their scroll positions when switching tabs.
+- **Home shortcuts:** quick access to Songs, Folders, Favorites and Library.
+- **Mini-player:** discreet playback progress bar, with live position updates from the existing Media3 controller.
+- **Now Playing:** gentle animated artwork transition and small scale change for play/pause, without continuous heavy animation.
+- **Search:** background filtered/sorted queries with short debounce; multi-word searches can match across title, artist, album, file name and folder.
+- **Folder Explorer:** nested folder counts are precomputed per library refresh, rather than recounting for every visible row.
 
-Settings stay on your phone and persist through normal signed application updates. Nothing here needs an account or internet. **Audio engine remains functional if hardware EQ is unavailable.** Android devices differ in effect support; some headphones, audio routes, and phones may not apply effects. Start with low boost levels to avoid distortion.
+No original music files are moved or deleted. No new permissions are needed. Existing Favorites, custom playlists, offline/online lyrics, EQ settings and signed in-app updates are preserved.
 
-## Release information
+## Update the existing GitHub repository
 
-- Android application ID: `com.lokij.lokitunes` (**unchanged**)
-- Version name: `0.8.0`, versionCode: `10`
-- GitHub Actions build & signed release pipeline: **preserved**
-- Same existing LokiTunes signing keystore and `LOKITUNES_*` secrets: **required for install-over update**
-- No keystores or secrets included in the ZIP
-
-### Updating your GitHub repository
-
-Apply **PATCH ZIP** to the existing v0.7.0 project root (so e.g. `app/src/...` overwrites the existing files, not a nested LokiTunes folder).
+Extract the PATCH ZIP **into the root of the existing LokiTunes repository**. Check that the updated files land in `app/src/...` (not inside a nested folder). Then:
 
 ```bash
 git add -A
-git commit -m "feat: LokiTunes v0.8.0 Premium Audio"
+git commit -m "feat: LokiTunes v0.9.0 polish and performance"
 git push origin main
 ```
 
-Verify **GitHub → Actions** has a green run for the commit, including Gradle unit tests and Android debug compile. Only then make the version tag:
+Wait for a green **GitHub Actions** build, including unit tests and `assembleDebug`. Only then:
 
 ```bash
-git tag v0.8.0
-git push origin v0.8.0
+git tag v0.9.0
+git push origin v0.9.0
 ```
 
-Verify **GitHub → Releases** has `LokiTunes-v0.8.0-release.apk` produced by a **signed** release workflow. Update through **LokiTunes → Updates → Download → Install**; do not uninstall your existing signed app or install the Actions debug APK.
+A successful tag workflow publishes `LokiTunes-v0.9.0-release.apk`. Update **inside your installed signed LokiTunes** (Updates → Download → Install). Do not uninstall. **Use your original private signing key** in the existing GitHub secrets; do not regenerate it or upload it to the repository.
 
-### Test on your Android device
+### What's preserved
 
-See [TEST_PLAN.md](TEST_PLAN.md). In particular, compare the same track with EQ off vs Bass/Vocal, then toggle on/off during playback and while playing in background. Check Bluetooth earbuds and speaker independently. Check Favorites, playlists, lyrics, and in-app updates remain intact.
+- Android application ID: `com.lokij.lokitunes`
+- `versionName = "0.9.0"`, `versionCode = 11`
+- Android Media3 background playback, in-app GitHub release updates, favorite/playlist storage, smart offline/online lyrics, Sound Studio
+- Original Midnight Aurora colors and offline music library
 
-## Engineering & validation
+## Quality checks / limitations
 
-- Source architecture was inspected against v0.7.0, including the Media3 session service, current Sound sheet, and GitHub signing workflow.
-- New DSP settings model compiled locally using Kotlin; **19 smoke assertions passed** for presets, storage encoding, frequency interpolation, gain clamping, and bass limits.
-- JUnit tests were added to the Android project and will run during GitHub Actions `:app:testDebugUnitTest`.
-- Manifest/XML and workflow YAML syntax can be checked statically, but full Android SDK/Compose APK compilation is **not available locally**. The actual GitHub build and your phone determine whether release is ready.
-
-## Privacy & existing functions
-
-Favorites, playlists, Smart Lyrics, song sorting, folder explorer, playback speed, sleep timer, and signed updater are preserved. Normal music playback stays offline. The optional LRCLIB lyrics search and GitHub updates still require internet when you use them. `MIT` license.
+See [TEST_PLAN.md](TEST_PLAN.md). Pure Kotlin smoke tests and syntax/static validations run locally; GitHub Actions must still compile the Android/Compose sources and the real device must be tested. Do not treat source-level validation alone as a successful release.

@@ -4,6 +4,9 @@ import android.content.Intent
 import android.net.Uri
 import android.graphics.BitmapFactory
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import android.media.MediaMetadataRetriever
 import android.media.audiofx.AudioEffect
 import com.lokij.lokitunes.lyrics.LrcParser
@@ -18,6 +21,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -31,6 +36,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -55,10 +61,12 @@ import com.lokij.lokitunes.data.MusicPaths
 import com.lokij.lokitunes.data.MusicTrack
 import com.lokij.lokitunes.data.IndexedSong
 import com.lokij.lokitunes.data.LibraryInsights
+import com.lokij.lokitunes.data.LibraryBrowse
 import com.lokij.lokitunes.data.SongSort
 import com.lokij.lokitunes.data.SavedPlaylist
 import com.lokij.lokitunes.ui.theme.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToLong
@@ -71,6 +79,9 @@ private val tabIcons = listOf(Icons.Default.Home, Icons.Default.MusicNote, Icons
 @Composable
 fun LokiApp(state: LokiUiState, vm: LokiViewModel) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    // Keep the library scroll positions while moving between the five main sections.
+    val songsScroll = rememberLazyListState()
+    val favoritesScroll = rememberLazyListState()
     var showPlayer by rememberSaveable { mutableStateOf(false) }
     val currentTrack = state.tracks.firstOrNull { it.id == state.currentTrackId }
     val updater: UpdateViewModel = viewModel()
@@ -150,7 +161,9 @@ fun LokiApp(state: LokiUiState, vm: LokiViewModel) {
         bottomBar = {
             Column {
                 if (currentTrack != null) {
-                    MiniPlayer(currentTrack, state.isPlaying, vm, onOpen = { showPlayer = true })
+                    MiniPlayer(currentTrack, state.isPlaying, state.positionMs,
+                        state.durationMs.takeIf { it > 0 } ?: currentTrack.durationMs,
+                        vm, onOpen = { showPlayer = true })
                 }
                 NavigationBar(containerColor = NightPanel, tonalElevation = 0.dp) {
                     tabs.forEachIndexed { index, name ->
@@ -208,12 +221,18 @@ fun LokiApp(state: LokiUiState, vm: LokiViewModel) {
                     }
                 }
             }
-            when (selectedTab) {
-                0 -> HomeScreen(state, vm, openSongs = { selectedTab = 1 })
-                1 -> SongsScreen(state, vm)
-                2 -> FoldersScreen(state, vm)
-                3 -> FavoritesScreen(state, vm)
-                else -> LibraryScreen(state, vm)
+            Crossfade(targetState = selectedTab, animationSpec = tween(durationMillis = 180), label = "LokiTunes tabs") { tab ->
+                when (tab) {
+                    0 -> HomeScreen(state, vm,
+                        openSongs = { selectedTab = 1 },
+                        openFolders = { selectedTab = 2 },
+                        openFavorites = { selectedTab = 3 },
+                        openLibrary = { selectedTab = 4 })
+                    1 -> SongsScreen(state, vm, songsScroll)
+                    2 -> FoldersScreen(state, vm)
+                    3 -> FavoritesScreen(state, vm, favoritesScroll)
+                    else -> LibraryScreen(state, vm)
+                }
             }
         }
     }
@@ -316,7 +335,11 @@ private fun AppHeader(onRefresh: () -> Unit, busy: Boolean, hasUpdate: Boolean, 
 }
 
 @Composable
-private fun HomeScreen(state: LokiUiState, vm: LokiViewModel, openSongs: () -> Unit) {
+private fun HomeScreen(
+    state: LokiUiState, vm: LokiViewModel,
+    openSongs: () -> Unit, openFolders: () -> Unit,
+    openFavorites: () -> Unit, openLibrary: () -> Unit
+) {
     val recent = remember(state.tracks) { state.tracks.sortedByDescending { it.dateAdded }.take(7) }
     val last = state.tracks.firstOrNull { it.id == state.lastPlayedId }
     LazyColumn(
@@ -342,6 +365,19 @@ private fun HomeScreen(state: LokiUiState, vm: LokiViewModel, openSongs: () -> U
                 }
             }
         }
+        item {
+            SectionTitle("Quick access", "One tap to your favorite corners")
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { AssistChip(onClick = openSongs, label = { Text("All songs") },
+                    leadingIcon = { Icon(Icons.Default.MusicNote, null, Modifier.size(16.dp)) }) }
+                item { AssistChip(onClick = openFolders, label = { Text("Folders") },
+                    leadingIcon = { Icon(Icons.Default.Folder, null, Modifier.size(16.dp)) }) }
+                item { AssistChip(onClick = openFavorites, label = { Text("Favorites") },
+                    leadingIcon = { Icon(Icons.Default.Favorite, null, Modifier.size(16.dp)) }) }
+                item { AssistChip(onClick = openLibrary, label = { Text("Playlists") },
+                    leadingIcon = { Icon(Icons.Default.QueueMusic, null, Modifier.size(16.dp)) }) }
+            }
+        }
         if (last != null) {
             item {
                 SectionTitle("Jump back in", "Your last selected track")
@@ -357,16 +393,27 @@ private fun HomeScreen(state: LokiUiState, vm: LokiViewModel, openSongs: () -> U
 }
 
 @Composable
-private fun SongsScreen(state: LokiUiState, vm: LokiViewModel) {
+private fun SongsScreen(state: LokiUiState, vm: LokiViewModel,
+    scrollState: androidx.compose.foundation.lazy.LazyListState) {
     var query by rememberSaveable { mutableStateOf("") }
     var sortMenu by remember { mutableStateOf(false) }
-    val songs = remember(state.tracks, query, state.songSort) {
-        val filtered = state.tracks.filter {
-            it.title.contains(query, true) || it.artist.contains(query, true) ||
-                it.album.contains(query, true) || it.folderPath.contains(query, true)
+    // Debounce typing, then filter/sort away from the UI thread for large offline libraries.
+    var songs by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
+    var hasSearchResult by remember { mutableStateOf(false) }
+    LaunchedEffect(state.tracks, query, state.songSort) {
+        if (query.isNotBlank()) delay(140)
+        val tracks = state.tracks
+        val search = query
+        val sorting = state.songSort
+        songs = withContext(Dispatchers.Default) {
+            val filtered = tracks.filter { track ->
+                LibraryBrowse.matches(search, track.title, track.artist,
+                    track.album, track.fileName, track.folderPath)
+            }
+            val byId = filtered.associateBy { it.id }
+            LibraryInsights.sorted(filtered.map { it.asIndexedSong() }, sorting).mapNotNull { byId[it.id] }
         }
-        val byId = filtered.associateBy { it.id }
-        LibraryInsights.sorted(filtered.map { it.asIndexedSong() }, state.songSort).mapNotNull { byId[it.id] }
+        hasSearchResult = true
     }
     Column(Modifier.fillMaxSize()) {
         SectionHeader("All songs", "${state.tracks.size} tracks ready to play")
@@ -394,7 +441,14 @@ private fun SongsScreen(state: LokiUiState, vm: LokiViewModel) {
                 }
             }
         }
-        TrackList(songs, state.favorites, vm, "No matching songs", "Try another search or refresh the library.")
+        if (!hasSearchResult) {
+            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+            }
+        } else {
+            TrackList(songs, state.favorites, vm, "No matching songs", "Try another search or refresh the library.",
+                listState = scrollState)
+        }
     }
 }
 
@@ -408,6 +462,10 @@ private fun FoldersScreen(state: LokiUiState, vm: LokiViewModel) {
     BackHandler(enabled = (mode == 0 && selectedFolder != null) || (mode == 1 && explorerPath.isNotEmpty())) {
         if (mode == 0) selectedFolder = null else explorerPath = explorerPath.substringBeforeLast('/', "")
     }
+    // Calculated only when the indexed library changes (not for every visible folder row).
+    val nestedCounts = remember(state.tracks) {
+        LibraryBrowse.recursiveFolderCounts(state.tracks.map { it.folderPath })
+    }
     Column(Modifier.fillMaxSize()) {
         SectionHeader("Your folders", "Browse where your songs actually live")
         Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -419,7 +477,7 @@ private fun FoldersScreen(state: LokiUiState, vm: LokiViewModel) {
                 val groups = remember(state.tracks) { state.tracks.groupBy { it.folderPath }.toSortedMap() }
                 if (groups.isEmpty()) EmptyState("No music folders", "Tap refresh after adding music.")
                 LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
-                    items(groups.keys.toList()) { folder ->
+                    items(groups.keys.toList(), key = { it }) { folder ->
                         FolderRow(MusicPaths.folderLabel(folder), folder, groups.getValue(folder).size) { selectedFolder = folder }
                     }
                 }
@@ -449,9 +507,10 @@ private fun FoldersScreen(state: LokiUiState, vm: LokiViewModel) {
                 if (explorerPath.isBlank()) emptyList() else state.tracks.filter { MusicPaths.isDirectlyIn(explorerPath, it.folderPath) }.sortedBy { it.title.lowercase() }
             }
             LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
-                items(childFolders) { folder ->
-                    val count = state.tracks.count { it.folderPath == folder || it.folderPath.startsWith("$folder/") }
-                    FolderRow(MusicPaths.folderLabel(folder), folder, count) { explorerPath = folder }
+                items(childFolders, key = { it }) { folder ->
+                    FolderRow(MusicPaths.folderLabel(folder), folder, nestedCounts[folder] ?: 0) {
+                        explorerPath = folder
+                    }
                 }
                 items(direct, key = { it.id }) { track ->
                     TrackRow(track, state.favorites.contains(track.id), onPlay = { vm.playTracks(direct, direct.indexOf(track)) }, onFavorite = { vm.toggleFavorite(track.id) }, onPlayNext = { vm.queueTrack(track, true) }, onAddToQueue = { vm.queueTrack(track, false) }, onPickPlaylist = { vm.showPlaylistPicker(track.id) })
@@ -463,7 +522,8 @@ private fun FoldersScreen(state: LokiUiState, vm: LokiViewModel) {
 }
 
 @Composable
-private fun FavoritesScreen(state: LokiUiState, vm: LokiViewModel) {
+private fun FavoritesScreen(state: LokiUiState, vm: LokiViewModel,
+    scrollState: androidx.compose.foundation.lazy.LazyListState) {
     var sorting by rememberSaveable { mutableIntStateOf(0) }
     val exportFavorites = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -531,7 +591,8 @@ private fun FavoritesScreen(state: LokiUiState, vm: LokiViewModel) {
                 }
             }
         }
-        TrackList(favorites, state.favorites, vm, "Your favorites live here", "Tap the heart beside any song to save it.")
+        TrackList(favorites, state.favorites, vm, "Your favorites live here", "Tap the heart beside any song to save it.",
+            listState = scrollState)
     }
 }
 
@@ -718,11 +779,14 @@ private fun DuplicatesPane(state: LokiUiState, vm: LokiViewModel) {
 
 @Composable
 private fun TrackList(tracks: List<MusicTrack>, favorites: Set<String>, vm: LokiViewModel,
-    title: String, subtitle: String, playlistId: String? = null) {
+    title: String, subtitle: String, playlistId: String? = null,
+    listState: androidx.compose.foundation.lazy.LazyListState? = null) {
+    val fallbackState = rememberLazyListState()
+    val effectiveListState = listState ?: fallbackState
     if (tracks.isEmpty()) {
         EmptyState(title, subtitle)
     } else {
-        LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+        LazyColumn(state = effectiveListState, contentPadding = PaddingValues(bottom = 24.dp)) {
             itemsIndexed(tracks, key = { _, track -> track.id }) { index, track ->
                 TrackRow(track, favorites.contains(track.id), onPlay = { vm.playTracks(tracks, index) },
                     onFavorite = { vm.toggleFavorite(track.id) },
@@ -874,23 +938,43 @@ private fun AlbumTile(size: androidx.compose.ui.unit.Dp, artwork: ImageBitmap? =
 }
 
 @Composable
-private fun MiniPlayer(track: MusicTrack, isPlaying: Boolean, vm: LokiViewModel, onOpen: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
+private fun MiniPlayer(
+    track: MusicTrack, isPlaying: Boolean, positionMs: Long,
+    durationMs: Long, vm: LokiViewModel, onOpen: () -> Unit
+) {
+    val fraction = if (durationMs > 0L) (positionMs.toFloat() / durationMs)
+        .coerceIn(0f, 1f) else 0f
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(16.dp)).background(NightCard)
-            .clickable(onClick = onOpen).padding(start = 8.dp, end = 5.dp, top = 7.dp, bottom = 7.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
-        AlbumTile(43.dp)
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = SoftText, fontSize = 11.sp)
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .clickable(onClick = onOpen)
+                .padding(start = 8.dp, end = 5.dp, top = 7.dp, bottom = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AlbumTile(43.dp)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = SoftText, fontSize = 11.sp)
+            }
+            IconButton(onClick = vm::playPause) {
+                Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    "Play or pause", tint = Mint)
+            }
+            IconButton(onClick = vm::next) {
+                Icon(Icons.Default.SkipNext, "Next song", tint = Color.White)
+            }
         }
-        IconButton(onClick = vm::playPause) {
-            Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play or pause", tint = Mint)
-        }
-        IconButton(onClick = vm::next) { Icon(Icons.Default.SkipNext, "Next", tint = Color.White) }
+        LinearProgressIndicator(
+            progress = { fraction },
+            modifier = Modifier.fillMaxWidth().height(3.dp),
+            color = Mint, trackColor = NightCard
+        )
     }
 }
 
@@ -920,6 +1004,10 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
     val currentArtwork = artworkVisual
     val desiredAccent = if (state.dynamicAlbumColors) currentArtwork?.accent ?: Lavender else Lavender
     val animatedAccent by animateColorAsState(targetValue = desiredAccent, label = "Album artwork accent")
+    val coverScale by animateFloatAsState(
+        targetValue = if (state.isPlaying) 1f else 0.975f,
+        animationSpec = tween(durationMillis = 320), label = "Artwork motion"
+    )
     val topShade = lerp(Midnight, animatedAccent, 0.30f)
     var showQueue by remember { mutableStateOf(false) }
     var showSleepTimer by remember { mutableStateOf(false) }
@@ -956,9 +1044,21 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
         Text(if (state.dynamicAlbumColors) "Album colors · On" else "Midnight Aurora · Fixed colors",
             color = SoftText, fontSize = 11.sp)
         Spacer(Modifier.height(24.dp))
-        Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(29.dp)).background(albumGradient), contentAlignment = Alignment.Center) {
-            if (currentArtwork != null) Image(currentArtwork.image, "Album cover", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            else Icon(Icons.Default.GraphicEq, null, tint = Color.White.copy(alpha = 0.92f), modifier = Modifier.size(118.dp))
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(1f)
+                .graphicsLayer { scaleX = coverScale; scaleY = coverScale }
+                .clip(RoundedCornerShape(29.dp)).background(albumGradient),
+            contentAlignment = Alignment.Center
+        ) {
+            Crossfade(targetState = currentArtwork?.image,
+                modifier = Modifier.fillMaxSize(),
+                animationSpec = tween(durationMillis = 300), label = "Artwork fade") { cover ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    if (cover != null) Image(cover, "Album cover", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    else Icon(Icons.Default.GraphicEq, "LokiTunes album art placeholder",
+                        tint = Color.White.copy(alpha = 0.92f), modifier = Modifier.size(118.dp))
+                }
+            }
         }
         Spacer(Modifier.height(35.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

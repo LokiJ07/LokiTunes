@@ -1,18 +1,17 @@
 # LokiTunes changelog
 
-## v0.8.0 — Premium Audio (build 10)
+## v0.9.0 — Midnight Aurora Polish (build 11)
 
-- New built-in **Sound Studio** in Now Playing → Sound.
-- Five-point EQ curve with Flat, Bass, Vocal, Pop, Rock, and Custom profiles.
-- Adjustable bass boost (0–100%); off by default.
-- Custom EQ supports -6 to +6 dB at 60 Hz / 230 Hz / 910 Hz / 4 kHz / 14 kHz reference bands. The Android audio framework may expose fewer/more physical bands; output uses log-frequency interpolation and clamps to device-supported gain range.
-- Effects are attached only to LokiTunes' active Media3 audio session inside the playback service (not the system-wide mix), released at shutdown, and rebound if the session ID changes.
-- Settings persisted using the existing `lokitunes_settings` preferences; audio writes are coalesced to reduce UI/audio-thread churn when dragging sliders.
-- Existing playback speed presets, optional system EQ shortcut, lyrics, playlists, Favorites, and GitHub updater retained.
-- Package stays `com.lokij.lokitunes`, versionCode increases from 9 to 10; release signing flow unchanged.
+- Smoother 180 ms tab crossfade between main screens.
+- Persistent Songs/Favorites scroll positions when switching tabs.
+- Home quick-access chips for Songs, Folders, Favorites and Library.
+- Slim progress bar in the mini-player with live playback progress.
+- Now Playing: subtle artwork fade and breathing effect on play/pause.
+- Faster browse: debounced search on Dispatchers.Default, with multi-word matching across title/artist/album/filename/folder.
+- Faster Folder Explorer: cached recursive folder counts and stable lazy-list keys.
+- Preserved v0.8.0 music engine, Sound Studio, Smart Lyrics, playlist and Favorites storage, offline access and GitHub updater.
+- Same signed release setup; `versionCode` 11, `versionName` 0.9.0.
 
-### Important limitations
+## v0.8.0 — Premium Audio
 
-- Audio effects depend on Android device implementation and processing output route. Some phones may not support EQ or bass boost, or may have OEM limitations. The feature does not alter or upload music files.
-- Boosting multiple frequencies can cause distortion or excessive loudness. Start low and keep volume comfortable.
-- Full Android compilation and real-device audio tests remain required before tagging a public release.
+- Built-in Sound Studio with equalizer, presets and bass boost on compatible Android devices.

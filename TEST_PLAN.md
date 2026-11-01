@@ -1,34 +1,27 @@
-# LokiTunes v0.8.0 — real-device QA checklist
+# LokiTunes v0.9.0 Test Plan
 
-## A. Compilation and release safety
+## Build / release (GitHub)
 
-- [ ] `:app:testDebugUnitTest` passes on GitHub Actions.
-- [ ] `:app:assembleDebug` and `:app:assembleRelease` pass.
-- [ ] GitHub release signing shows the **same certificate fingerprint** as previous signed LokiTunes releases.
-- [ ] Release APK is named `LokiTunes-v0.8.0-release.apk` and versionCode is 10.
-- [ ] In-app update from signed v0.7.0 works without uninstalling or losing Favorites or playlists.
+- `:app:testDebugUnitTest` passes, including new `LibraryBrowseTest`.
+- `:app:assembleDebug` passes; no experimental API annotation errors.
+- Signed `v0.9.0` release builds and passes `apksigner verify`.
+- Signed GitHub release APK is named `LokiTunes-v0.9.0-release.apk`.
 
-## B. Sound Studio
+## Device checks (on existing signed app, without uninstall)
 
-- [ ] Open Now Playing → Sound; EQ starts disabled (unless previously enabled).
-- [ ] Enable EQ, select Bass / Vocal / Rock / Pop / Flat while music plays.
-- [ ] Adjust any band, ensure preset changes to Custom and slider retains selected value.
-- [ ] Test bass boost 0 / 25 / 50; avoid extreme output or high volume.
-- [ ] Disable EQ and verify the audio returns toward unprocessed sound.
-- [ ] Restart the app and verify preferences persist.
-- [ ] Compare built-in speaker, wired headphones (if available), and Bluetooth headset.
-- [ ] Pause/resume, skip, background playback, lock phone and unlock; verify no crash or stuck effects.
-- [ ] Audio should still play on devices where the EQ / BassBoost implementations are unsupported; audio improvement is device dependent.
-- [ ] With no audio playing, toggling EQ must not crash the app.
+1. Check song scan, playback, Bluetooth, lock screen and background controls as before.
+2. Browse all tabs rapidly; each fades gently and selection always matches content.
+3. Scroll Songs deeply → Favorites → back to Songs; prior list position stays. Repeat for Favorites.
+4. Search for a title fragment, a multi-word title/artist combination, folder and file name. Clear search.
+5. Scan a library with many tracks; scroll the folder explorer and compare displayed nested counts.
+6. Open the mini-player; watch progress advance, pause, seek, and skip. Avoid showing a progress bar when duration is unknown.
+7. Toggle play/pause; ensure subtle artwork motion works and no stutter. Rapidly skip tracks with/without album art.
+8. Check Sound Studio equalizer, bass boost, playback speed, sleep timer, lyrics, favorites, playlists, exports and in-app updates still work.
+9. Upgrade from signed v0.8.0 to signed v0.9.0 without uninstall. Favorites, playlists and settings must remain.
+10. Check very narrow/small screens: no clipped important controls; quick-access shortcuts must scroll horizontally.
 
-## C. Regression
+## Automated / static checks
 
-- [ ] Song scanning, folder navigation, favorites, playlist creation/playback and duplicate list work.
-- [ ] Local lyrics / online lyrics cache still works (if configured).
-- [ ] Sleep timer, shuffle, repeat, queue, and playback speed still work.
-- [ ] Check CPU/battery or audible glitches while rapidly moving EQ sliders.
-- [ ] Saved favorites and playlist data remain through signed update.
-
-## Limitations
-
-Local tests include pure Kotlin audio tuning only; Android Equalizer/BassBoost functionality requires live devices with compatible audio effect engines. Avoid high volume during EQ testing.
+- `LibraryBrowseTest.kt` covers search matching, empty query, folder counting, backslash normalization.
+- Zip integrity, manifest XML, GitHub YAML and version/application ID checks.
+- Full Android compile needs GitHub Actions/SDK; no APK compile was claimed locally.
