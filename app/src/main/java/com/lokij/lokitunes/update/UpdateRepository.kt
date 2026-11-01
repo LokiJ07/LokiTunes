@@ -2,6 +2,7 @@ package com.lokij.lokitunes.update
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.pm.PackageInfo
 import android.os.Build
 import android.os.Environment
 import androidx.core.content.pm.PackageInfoCompat
@@ -127,6 +128,15 @@ class UpdateRepository(private val context: Context) {
                 context.packageManager.getPackageInfo(context.packageName, 0)
             )
             require(PackageInfoCompat.getLongVersionCode(pkg) > currentCode) { "APK version code is not newer" }
+            // Catch signing mismatches before Android opens its installer. Normal updates
+            // always reuse the same private release key, preserving app data.
+            val installed = installedPackageWithSignatures()
+            require(SigningGuard.sameCertificate(
+                signingCertificateDigests(installed), signingCertificateDigests(pkg)
+            )) {
+                "This APK uses a different signing key. No installation started. " +
+                    "Use the original LokiTunes release signing key; do not uninstall your app."
+            }
             if (result.exists() && !result.delete()) error("Unable to replace old update file")
             require(temp.renameTo(result)) { "Unable to save downloaded APK" }
             return result
@@ -137,8 +147,31 @@ class UpdateRepository(private val context: Context) {
     }
 
     @Suppress("DEPRECATION")
-    private fun archivePackage(file: File) = context.packageManager.getPackageArchiveInfo(
-        file.absolutePath,
-        if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+    private fun signatureFlags(): Int = if (Build.VERSION.SDK_INT >= 28) {
+        PackageManager.GET_SIGNING_CERTIFICATES
+    } else PackageManager.GET_SIGNATURES
+
+    @Suppress("DEPRECATION")
+    private fun installedPackageWithSignatures(): PackageInfo = context.packageManager.getPackageInfo(
+        context.packageName, signatureFlags()
     )
+
+    @Suppress("DEPRECATION")
+    private fun archivePackage(file: File): PackageInfo? = context.packageManager.getPackageArchiveInfo(
+        file.absolutePath, signatureFlags()
+    )
+
+    @Suppress("DEPRECATION")
+    private fun signingCertificateDigests(info: PackageInfo): Set<String> {
+        val certificates = if (Build.VERSION.SDK_INT >= 28) {
+            // apkContentsSigners are the current signers of the installed/downloaded APK.
+            info.signingInfo?.apkContentsSigners?.toList().orEmpty()
+        } else {
+            info.signatures?.toList().orEmpty()
+        }
+        return certificates.map { cert ->
+            MessageDigest.getInstance("SHA-256").digest(cert.toByteArray())
+                .joinToString("") { byte -> "%02x".format(byte) }
+        }.toSet()
+    }
 }

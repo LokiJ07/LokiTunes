@@ -1,27 +1,38 @@
-# LokiTunes v0.9.0 Test Plan
+# LokiTunes v1.0.0 — Regression Test Plan
 
-## Build / release (GitHub)
+**Do not call this build stable based on source checks alone.** Run the GitHub Actions tests, then validate on a real phone.
 
-- `:app:testDebugUnitTest` passes, including new `LibraryBrowseTest`.
-- `:app:assembleDebug` passes; no experimental API annotation errors.
-- Signed `v0.9.0` release builds and passes `apksigner verify`.
-- Signed GitHub release APK is named `LokiTunes-v0.9.0-release.apk`.
+## Automated checks (GitHub Actions)
 
-## Device checks (on existing signed app, without uninstall)
+- [ ] `:app:testDebugUnitTest` succeeds (including `SigningGuardTest`).
+- [ ] `:app:assembleDebug` succeeds.
+- [ ] Signed APK is created on version-tag build; `apksigner verify --print-certs` passes.
+- [ ] Tag `v1.0.0` exactly matches Gradle `versionName = "1.0.0"`.
+- [ ] Published release contains `LokiTunes-v1.0.0-release.apk` (not debug APK).
 
-1. Check song scan, playback, Bluetooth, lock screen and background controls as before.
-2. Browse all tabs rapidly; each fades gently and selection always matches content.
-3. Scroll Songs deeply → Favorites → back to Songs; prior list position stays. Repeat for Favorites.
-4. Search for a title fragment, a multi-word title/artist combination, folder and file name. Clear search.
-5. Scan a library with many tracks; scroll the folder explorer and compare displayed nested counts.
-6. Open the mini-player; watch progress advance, pause, seek, and skip. Avoid showing a progress bar when duration is unknown.
-7. Toggle play/pause; ensure subtle artwork motion works and no stutter. Rapidly skip tracks with/without album art.
-8. Check Sound Studio equalizer, bass boost, playback speed, sleep timer, lyrics, favorites, playlists, exports and in-app updates still work.
-9. Upgrade from signed v0.8.0 to signed v0.9.0 without uninstall. Favorites, playlists and settings must remain.
-10. Check very narrow/small screens: no clipped important controls; quick-access shortcuts must scroll horizontally.
+## Real-device test (start from signed v0.9.0)
 
-## Automated / static checks
+1. [ ] Confirm LokiTunes v0.9.0 is installed from GitHub **Releases**, not GitHub **Actions debug APK**.
+2. [ ] Mark a new Favorite and create a test playlist with 2 songs. Save a Favorites JSON backup for safety.
+3. [ ] After a green main-branch workflow, download the **signed release APK artifact** (not the debug APK) and manually install it over v0.9.0 on a test phone **before public tagging**.
+4. [ ] Android installer accepts update *over* v0.9.0; no uninstall or package-conflict warning. After tagging/publishing, test the in-app download/install on a second signed-v0.9.0 installation or the following release.
+5. [ ] App shows v1.0.0 / build 12 after reopen; Favorite and playlist are still present.
+6. [ ] App starts with Wi-Fi disabled; MediaStore scan shows expected songs/folders; search and sort work.
+7. [ ] Play/pause, seek, next/previous, queue editing, shuffle/repeat work.
+8. [ ] Lock screen, headset unplug/Bluetooth and background playback behave normally; no unexpected audio after unplug.
+9. [ ] Sleep timer pauses music at deadline; cancel stops timer.
+10. [ ] Manual `.lrc` and local auto-match work; synced lyrics follow seek position; saved lyrics work offline.
+11. [ ] Sound presets and bass controls do not crash on this phone (actual effect varies by device).
+12. [ ] Updates screen says no newer stable version when v1.0.0 is latest.
+13. [ ] Play music for 30+ minutes with screen off; watch for crash, overheating or unexpected battery drain.
 
-- `LibraryBrowseTest.kt` covers search matching, empty query, folder counting, backslash normalization.
-- Zip integrity, manifest XML, GitHub YAML and version/application ID checks.
-- Full Android compile needs GitHub Actions/SDK; no APK compile was claimed locally.
+## Signing compatibility negative test (development only)
+
+- [ ] With a **non-production test device**, test a mismatched APK signed with a throwaway debug key: updater must reject before installer. Do not change production release signing secrets merely to test this.
+
+## Known constraints
+
+- Android scoped storage may hide protected folders; this is expected.
+- LRCLIB content availability and the device's built-in audio effects are not guaranteed.
+- This release does not migrate or back up every application setting; preserve Favorites JSON separately if needed.
+- The updater's certificate preflight intentionally requires the **same current signing certificate**, so APK signing-key rotation is not supported by this updater yet. Android ultimately decides if an APK is installable.
