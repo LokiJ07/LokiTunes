@@ -21,6 +21,7 @@ import com.lokij.lokitunes.data.SavedPlaylist
 import com.lokij.lokitunes.data.SongSort
 import com.lokij.lokitunes.playback.MusicPlaybackService
 import com.lokij.lokitunes.playback.SleepTimer
+import com.lokij.lokitunes.playback.AudioTuning
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +49,10 @@ data class LokiUiState(
     val queueIndex: Int = -1,
     val dynamicAlbumColors: Boolean = true,
     val playbackSpeed: Float = 1.0f,
+    val equalizerEnabled: Boolean = false,
+    val equalizerPreset: String = "Flat",
+    val customEqBands: List<Int> = listOf(0, 0, 0, 0, 0),
+    val bassBoostPercent: Int = 0,
     val sleepTimerEndMs: Long = 0L,
     val sleepRemainingMs: Long = 0L,
     val isScanning: Boolean = false,
@@ -246,6 +251,36 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
         settings.edit().putFloat("playback_speed", selected).apply()
         controller?.setPlaybackSpeed(selected)
         _state.update { it.copy(playbackSpeed = selected) }
+    }
+
+    /** Settings are read by the MediaSessionService while it owns the active audio session. */
+    fun setEqualizerEnabled(enabled: Boolean) {
+        settings.edit().putBoolean(AudioTuning.PREF_ENABLED, enabled).apply()
+        _state.update { it.copy(equalizerEnabled = enabled) }
+    }
+
+    fun selectEqPreset(preset: String) {
+        val safe = AudioTuning.sanitizePreset(preset)
+        settings.edit().putString(AudioTuning.PREF_PRESET, safe).apply()
+        _state.update { it.copy(equalizerPreset = safe) }
+    }
+
+    fun setCustomEqBand(index: Int, gainDb: Int) {
+        if (index !in 0..4) return
+        val current = _state.value
+        val next = AudioTuning.curve(current.equalizerPreset, current.customEqBands)
+            .toMutableList().apply { this[index] = gainDb.coerceIn(-6, 6) }
+        settings.edit()
+            .putString(AudioTuning.PREF_CUSTOM, AudioTuning.encodeCustom(next))
+            .putString(AudioTuning.PREF_PRESET, "Custom")
+            .apply()
+        _state.update { it.copy(customEqBands = next, equalizerPreset = "Custom") }
+    }
+
+    fun setBassBoost(percent: Int) {
+        val safe = percent.coerceIn(0, 100)
+        settings.edit().putInt(AudioTuning.PREF_BASS, safe).apply()
+        _state.update { it.copy(bassBoostPercent = safe) }
     }
 
     /** Jump relative to the real player position; never seek outside a known duration. */

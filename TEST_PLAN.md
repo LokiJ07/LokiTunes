@@ -1,25 +1,34 @@
-# LokiTunes v0.7.0 — Inspect → Improve → Test → Fix → Retest
+# LokiTunes v0.8.0 — real-device QA checklist
 
-## GitHub Actions before tagging
+## A. Compilation and release safety
 
-1. Push to `main`, confirm **Run unit tests and compile debug APK** passes (`:app:testDebugUnitTest` and `:app:assembleDebug`).
-2. Inspect the first failure if red; do not tag/release until it is green.
-3. Check the signed release job after pushing `v0.7.0`. Confirm release filename and `apksigner` verification. Do not change signing secrets.
+- [ ] `:app:testDebugUnitTest` passes on GitHub Actions.
+- [ ] `:app:assembleDebug` and `:app:assembleRelease` pass.
+- [ ] GitHub release signing shows the **same certificate fingerprint** as previous signed LokiTunes releases.
+- [ ] Release APK is named `LokiTunes-v0.8.0-release.apk` and versionCode is 10.
+- [ ] In-app update from signed v0.7.0 works without uninstalling or losing Favorites or playlists.
 
-## Real phone checks (signed v0.6.0 → signed v0.7.0)
+## B. Sound Studio
 
-1. Before updating, note your existing Favorites and saved lyrics; verify they remain after in-app update **without uninstalling**.
-2. Library → Playlists → create "Night Drives". Verify duplicate name with different case is rejected. Rename. Add 3 songs, try adding one twice and verify no duplicate membership.
-3. Play a playlist in order; next/previous and background playback should work normally. Remove a song from playlist and verify the actual MP3 still exists in Songs.
-4. Delete the playlist after confirmation and verify no audio files or Favorites are deleted.
-5. Try opening a playlist after deleting/moving one indexed song outside LokiTunes and refreshing; missing entries should be skipped, not crash playback.
-6. In Songs, test all 5 sort modes and restart the app to confirm the selected sort persists. Search by album name and folder path.
-7. Place two songs with similar title + artist + duration in separate folders: Library → Duplicates should show a *potential* match. Try files with different artists and very different lengths: should not be grouped.
-8. Confirm no delete-audio button exists in Duplicates.
-9. Regression: folder list/explorer, Favorites backup/restore, Play Queue, Sleep Timer, Now Playing, lyrics (local + optional online), GitHub updater, offline playback with Wi-Fi off.
-10. Check large libraries, repeated quick playlist taps, multiple screen rotations, and back navigation for Compose/runtime issues.
+- [ ] Open Now Playing → Sound; EQ starts disabled (unless previously enabled).
+- [ ] Enable EQ, select Bass / Vocal / Rock / Pop / Flat while music plays.
+- [ ] Adjust any band, ensure preset changes to Custom and slider retains selected value.
+- [ ] Test bass boost 0 / 25 / 50; avoid extreme output or high volume.
+- [ ] Disable EQ and verify the audio returns toward unprocessed sound.
+- [ ] Restart the app and verify preferences persist.
+- [ ] Compare built-in speaker, wired headphones (if available), and Bluetooth headset.
+- [ ] Pause/resume, skip, background playback, lock phone and unlock; verify no crash or stuck effects.
+- [ ] Audio should still play on devices where the EQ / BassBoost implementations are unsupported; audio improvement is device dependent.
+- [ ] With no audio playing, toggling EQ must not crash the app.
 
-## Local verification performed during packaging
+## C. Regression
 
-- Pure Kotlin PlaylistRules/LibraryInsights compiled with `kotlinc`, and 10 smoke assertions passed.
-- Full Android SDK / Compose build unavailable in the packaging runtime — **not claimed as passed**.
+- [ ] Song scanning, folder navigation, favorites, playlist creation/playback and duplicate list work.
+- [ ] Local lyrics / online lyrics cache still works (if configured).
+- [ ] Sleep timer, shuffle, repeat, queue, and playback speed still work.
+- [ ] Check CPU/battery or audible glitches while rapidly moving EQ sliders.
+- [ ] Saved favorites and playlist data remain through signed update.
+
+## Limitations
+
+Local tests include pure Kotlin audio tuning only; Android Equalizer/BassBoost functionality requires live devices with compatible audio effect engines. Avoid high volume during EQ testing.

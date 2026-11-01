@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
+import com.lokij.lokitunes.playback.AudioTuning
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lokij.lokitunes.BuildConfig
 import com.lokij.lokitunes.update.UpdatePhase
@@ -1111,7 +1112,7 @@ private fun NowPlayingScreen(track: MusicTrack, state: LokiUiState, vm: LokiView
             onClose = { showLyrics = false })
     }
     if (showSound) {
-        SoundSheet(state.playbackSpeed, vm::setPlaybackSpeed, onClose = { showSound = false })
+        SoundSheet(state, vm, onClose = { showSound = false })
     }
     if (showSleepTimer) {
         ModalBottomSheet(onDismissRequest = { showSleepTimer = false }, containerColor = NightPanel) {
@@ -1345,26 +1346,85 @@ private fun LyricsSheet(track: MusicTrack, positionMs: Long, onClose: () -> Unit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SoundSheet(speed: Float, onSpeedSelected: (Float) -> Unit, onClose: () -> Unit) {
+private fun SoundSheet(state: LokiUiState, vm: LokiViewModel, onClose: () -> Unit) {
     val context = LocalContext.current
     var deviceEqualizerError by remember { mutableStateOf(false) }
+    val shownBands = AudioTuning.curve(state.equalizerPreset, state.customEqBands)
     ModalBottomSheet(onDismissRequest = onClose, containerColor = NightPanel) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 10.dp)) {
-            Text("Sound settings", fontSize = 23.sp, fontWeight = FontWeight.Bold)
-            Text("Playback speed", color = SoftText, fontSize = 13.sp)
-            Spacer(Modifier.height(8.dp))
-            SoundPresets.values.chunked(3).forEach { group ->
+        Column(
+            Modifier.fillMaxWidth().heightIn(max = 680.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 22.dp, vertical = 10.dp)
+        ) {
+            Text("LokiTunes Sound Studio", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+            Text("Built-in audio tuning", color = SoftText, fontSize = 13.sp)
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Enable equalizer", fontWeight = FontWeight.SemiBold)
+                    Text("Applies to LokiTunes audio only", color = SoftText, fontSize = 11.sp)
+                }
+                Switch(checked = state.equalizerEnabled, onCheckedChange = vm::setEqualizerEnabled)
+            }
+            Spacer(Modifier.height(6.dp))
+            Text("Sound profiles", color = SoftText, fontSize = 13.sp)
+            Spacer(Modifier.height(6.dp))
+            AudioTuning.presets.chunked(3).forEach { group ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     group.forEach { preset ->
                         FilterChip(
-                            selected = kotlin.math.abs(speed - preset) < 0.01f,
-                            onClick = { onSpeedSelected(preset) },
-                            label = { Text("${preset}×") }
+                            selected = state.equalizerPreset == preset,
+                            onClick = { vm.selectEqPreset(preset) },
+                            enabled = state.equalizerEnabled,
+                            label = { Text(preset, fontSize = 12.sp) }
                         )
                     }
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(6.dp))
+            Text("5-band tuning · –6 to +6 dB", color = SoftText, fontSize = 13.sp)
+            AudioTuning.bandLabels.forEachIndexed { index, label ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text(label, fontSize = 12.sp, modifier = Modifier.width(65.dp), color = SoftText)
+                    Slider(
+                        value = shownBands[index].toFloat(),
+                        onValueChange = { vm.setCustomEqBand(index, it.toInt()) },
+                        valueRange = -6f..6f,
+                        steps = 11,
+                        enabled = state.equalizerEnabled,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text("${shownBands[index]} dB", fontSize = 11.sp,
+                        modifier = Modifier.width(48.dp), textAlign = TextAlign.End)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("Bass boost: ${state.bassBoostPercent}%", fontWeight = FontWeight.Medium)
+            Slider(
+                value = state.bassBoostPercent.toFloat(),
+                onValueChange = { vm.setBassBoost(it.toInt()) },
+                valueRange = 0f..100f,
+                enabled = state.equalizerEnabled
+            )
+            Text("Band frequencies and effect availability depend on your Android device. Loud boosts can distort audio; start low.",
+                color = SoftText, fontSize = 11.sp)
+            Spacer(Modifier.height(13.dp))
+            HorizontalDivider(color = NightCard)
+            Spacer(Modifier.height(11.dp))
+            Text("Playback speed", color = SoftText, fontSize = 13.sp)
+            Spacer(Modifier.height(6.dp))
+            SoundPresets.values.chunked(3).forEach { group ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    group.forEach { speed ->
+                        FilterChip(
+                            selected = kotlin.math.abs(state.playbackSpeed - speed) < 0.01f,
+                            onClick = { vm.setPlaybackSpeed(speed) },
+                            label = { Text("${speed}×") }
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
             OutlinedButton(onClick = {
                 deviceEqualizerError = runCatching {
                     context.startActivity(Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).apply {
@@ -1377,11 +1437,11 @@ private fun SoundSheet(speed: Float, onSpeedSelected: (Float) -> Unit, onClose: 
                 Spacer(Modifier.width(8.dp))
                 Text("Open device equalizer")
             }
-            Text("Equalizer availability depends on your phone. Playback speed works without a device equalizer.",
-                fontSize = 12.sp, color = SoftText)
-            if (deviceEqualizerError) Text("Your phone does not have a compatible sound effects panel.",
+            Text("Optional external sound panel; not required for LokiTunes EQ.",
+                fontSize = 11.sp, color = SoftText)
+            if (deviceEqualizerError) Text("Your phone has no compatible external sound panel.",
                 color = Color(0xFFFFBEC5), fontSize = 12.sp)
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(24.dp))
         }
     }
 }

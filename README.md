@@ -1,69 +1,56 @@
-# LokiTunes 🎧 — v0.7.0 Smart Music Library
+# LokiTunes 🎧 — v0.8.0 Premium Audio
 
-**Offline-first Android music player** with Midnight Aurora UI. Free, no ads, open source. Android 8+ (`minSdk 26`).
+Midnight Aurora • Free • Open source • Offline-first Android music player. **Android 8+** (minSdk 26).
 
-**Package remains `com.lokij.lokitunes`; versionName = `0.7.0`; versionCode = `9`.** Continue using the **same GitHub release signing keystore/secrets** you used for the previous signed releases. The app's Favorites, Lyrics cache, queue controls, and GitHub updater remain in place.
+## New: Sound Studio
 
-## New in v0.7.0
+1. Play any song and open **Now Playing → Sound**.
+2. Toggle **Enable equalizer** (off by default for safety and compatibility).
+3. Select **Flat / Bass / Vocal / Pop / Rock / Custom**.
+4. Adjust one of the five sliders (60 Hz, 230 Hz, 910 Hz, 4 kHz, 14 kHz) to switch into **Custom** mode. Values are limited to ±6 dB. Available physical equalizer bands are determined by Android; LokiTunes maps the five-point curve to each supported band and clamps within its advertised gain range.
+5. Adjust **Bass boost** from 0 to 100% if your phone supports it.
+6. Playback-speed controls and the **Open device equalizer** optional shortcut remain available.
 
-### Custom playlists — locally saved
+Settings stay on your phone and persist through normal signed application updates. Nothing here needs an account or internet. **Audio engine remains functional if hardware EQ is unavailable.** Android devices differ in effect support; some headphones, audio routes, and phones may not apply effects. Start with low boost levels to avoid distortion.
 
-- Open **Library → Playlists → New playlist** to create a custom playlist.
-- Tap a playlist, choose **Add songs**, and search the existing music library. You can add multiple songs; already-added songs are checked.
-- Or open any song's **⋮ menu → Add to playlist**, and select an existing playlist.
-- Open a playlist and tap **Play** to play its available songs in saved order.
-- Rename playlists with the pencil icon; delete a playlist using the trash icon with confirmation. To remove one song only, open its **⋮ menu → Remove from playlist** inside the playlist.
-- Playlists are stored in private app preferences, not online. No accounts or internet are needed. Playlist actions **never delete, move, or modify** actual audio files.
-- A playlist may show “unavailable song(s)” if the underlying files were moved, deleted, or reindexed by Android. Missing songs are skipped during playback rather than crashing. Playlists refer to MediaStore song IDs and may not survive file moves or a fresh installation without a future dedicated backup/restore feature.
+## Release information
 
-### Better sorting and searching
+- Android application ID: `com.lokij.lokitunes` (**unchanged**)
+- Version name: `0.8.0`, versionCode: `10`
+- GitHub Actions build & signed release pipeline: **preserved**
+- Same existing LokiTunes signing keystore and `LOKITUNES_*` secrets: **required for install-over update**
+- No keystores or secrets included in the ZIP
 
-- Open **Songs → Sort** and choose: Title A–Z, Recently added, Artist A–Z, Album A–Z, or Longest first.
-- The chosen sort preference is retained after app restart and normal signed updates.
-- Search checks song title, artist, album and audio folder path. Existing folder list/explorer modes are preserved.
+### Updating your GitHub repository
 
-### Potential duplicate finder (read-only)
-
-- Open **Library → Duplicates**.
-- Groups are based on case-insensitive title + artist and song duration within two seconds. The feature **does not compare file contents or prove exact duplication**.
-- Unknown-title/unknown-artist recordings are excluded from the heuristic to avoid excessive false positives.
-- Results allow playback, favoriting, or adding to playlists. **There is no delete-file action.**
-
-## GitHub build and update (no Android Studio on your PC)
-
-1. Apply the patch files over your existing v0.6.0 project. Do not create a nested extra folder.
-2. Push the changes to `main`:
+Apply **PATCH ZIP** to the existing v0.7.0 project root (so e.g. `app/src/...` overwrites the existing files, not a nested LokiTunes folder).
 
 ```bash
 git add -A
-git commit -m "feat: LokiTunes v0.7.0 Smart Music Library"
+git commit -m "feat: LokiTunes v0.8.0 Premium Audio"
 git push origin main
 ```
 
-3. Open **GitHub → Actions** and confirm `:app:testDebugUnitTest` and `:app:assembleDebug` succeed. A green main build is necessary but is not yet confirmation of real-device behavior.
-4. Only after the build succeeds, publish the **same commit** with:
+Verify **GitHub → Actions** has a green run for the commit, including Gradle unit tests and Android debug compile. Only then make the version tag:
 
 ```bash
-git tag v0.7.0
-git push origin v0.7.0
+git tag v0.8.0
+git push origin v0.8.0
 ```
 
-5. Verify the **signed** `LokiTunes-v0.7.0-release.apk` is published under GitHub Releases, then in the already-installed **signed** LokiTunes v0.6.0 use **Updates → Download → Install**. Never use the Actions debug APK as an update to the signed app.
+Verify **GitHub → Releases** has `LokiTunes-v0.8.0-release.apk` produced by a **signed** release workflow. Update through **LokiTunes → Updates → Download → Install**; do not uninstall your existing signed app or install the Actions debug APK.
 
-**Important:** Do not replace or regenerate the `LOKITUNES_*` release keystore/secrets. Losing or changing your private signing key prevents normal install-over updates of existing signed installations. No private `.jks` or passwords are included in this ZIP.
+### Test on your Android device
 
-## v0.7.0 validation status
+See [TEST_PLAN.md](TEST_PLAN.md). In particular, compare the same track with EQ off vs Bass/Vocal, then toggle on/off during playback and while playing in background. Check Bluetooth earbuds and speaker independently. Check Favorites, playlists, lyrics, and in-app updates remain intact.
 
-- Pure Kotlin core compilation and **10 smoke assertions passed** locally for playlist naming, unique membership, sorting, and duplicate detection.
-- Kotlin JVM unit test files added for `PlaylistRules` and `LibraryInsights` in the GitHub Android test workflow.
-- Android XML and GitHub workflow YAML were checked for validity, and ZIP integrity was verified.
-- **A full Android/Compose APK build was not performed locally.** GitHub Actions must confirm compilation before release, and the real phone must confirm the UI and update path.
+## Engineering & validation
 
-See [TEST_PLAN.md](TEST_PLAN.md) and [CHANGELOG.md](CHANGELOG.md).
+- Source architecture was inspected against v0.7.0, including the Media3 session service, current Sound sheet, and GitHub signing workflow.
+- New DSP settings model compiled locally using Kotlin; **19 smoke assertions passed** for presets, storage encoding, frequency interpolation, gain clamping, and bass limits.
+- JUnit tests were added to the Android project and will run during GitHub Actions `:app:testDebugUnitTest`.
+- Manifest/XML and workflow YAML syntax can be checked statically, but full Android SDK/Compose APK compilation is **not available locally**. The actual GitHub build and your phone determine whether release is ready.
 
-## Privacy
+## Privacy & existing functions
 
-- Offline scanning and playlist operations need no network connection.
-- Optional online lyrics from v0.6.0, and GitHub update checks/downloads, use internet only for their own functions.
-- No audio files are uploaded by the new library features.
-- License: MIT.
+Favorites, playlists, Smart Lyrics, song sorting, folder explorer, playback speed, sleep timer, and signed updater are preserved. Normal music playback stays offline. The optional LRCLIB lyrics search and GitHub updates still require internet when you use them. `MIT` license.
