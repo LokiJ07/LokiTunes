@@ -16,6 +16,9 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.lokij.lokitunes.data.FavoritesStore
 import com.lokij.lokitunes.data.MusicRepository
 import com.lokij.lokitunes.data.MusicTrack
+import com.lokij.lokitunes.data.PlaylistsStore
+import com.lokij.lokitunes.data.SavedPlaylist
+import com.lokij.lokitunes.data.SongSort
 import com.lokij.lokitunes.playback.MusicPlaybackService
 import com.lokij.lokitunes.playback.SleepTimer
 import org.json.JSONArray
@@ -38,6 +41,9 @@ data class LokiUiState(
     val tracks: List<MusicTrack> = emptyList(),
     val favorites: Set<String> = emptySet(),
     val favoriteSince: Map<String, Long> = emptyMap(),
+    val playlists: List<SavedPlaylist> = emptyList(),
+    val playlistPickerTrackId: String? = null,
+    val songSort: SongSort = SongSort.TITLE,
     val queue: List<QueueEntry> = emptyList(),
     val queueIndex: Int = -1,
     val dynamicAlbumColors: Boolean = true,
@@ -60,11 +66,14 @@ data class LokiUiState(
 class LokiViewModel(application: Application) : AndroidViewModel(application) {
     private val library = MusicRepository(application)
     private val store = FavoritesStore(application)
+    private val playlistsStore = PlaylistsStore(application)
     private val settings = application.getSharedPreferences("lokitunes_settings", 0)
     private val _state = MutableStateFlow(
         LokiUiState(
             favorites = store.all(),
             favoriteSince = store.favoriteDates(),
+            playlists = playlistsStore.all(),
+            songSort = SongSort.entries.getOrNull(settings.getInt("song_sort_mode", 0)) ?: SongSort.TITLE,
             dynamicAlbumColors = settings.getBoolean("dynamic_album_colors", true),
             playbackSpeed = SoundPresets.nearest(settings.getFloat("playback_speed", 1.0f)),
             sleepTimerEndMs = settings.getLong(SleepTimer.PREF_END_TIME, 0L),
@@ -142,6 +151,47 @@ class LokiViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleFavorite(id: String) {
         _state.update { it.copy(favorites = store.toggle(id), favoriteSince = store.favoriteDates()) }
     }
+
+    /** Offline music organization; never edits or removes audio files. */
+    fun setSongSort(mode: SongSort) {
+        settings.edit().putInt("song_sort_mode", mode.ordinal).apply()
+        _state.update { it.copy(songSort = mode) }
+    }
+
+    fun showPlaylistPicker(trackId: String) {
+        _state.update { it.copy(playlistPickerTrackId = trackId) }
+    }
+    fun hidePlaylistPicker() {
+        _state.update { it.copy(playlistPickerTrackId = null) }
+    }
+
+    private fun mutatePlaylists(successMessage: String, action: () -> Boolean): Boolean = try {
+        val changed = action()
+        if (changed) _state.update { it.copy(playlists = playlistsStore.all(), notice = successMessage, error = null) }
+        else _state.update { it.copy(notice = "No change made. Check playlist name or song selection.") }
+        changed
+    } catch (_: Exception) {
+        _state.update { it.copy(error = "Could not save playlists. Try again.") }
+        false
+    }
+
+    fun createPlaylist(name: String): Boolean =
+        mutatePlaylists("Playlist created: ${name.trim()}") { playlistsStore.create(name) }
+
+    fun renamePlaylist(id: String, name: String): Boolean =
+        mutatePlaylists("Playlist renamed.") { playlistsStore.rename(id, name) }
+
+    fun deletePlaylist(id: String): Boolean =
+        mutatePlaylists("Playlist deleted. Music files were not touched.") { playlistsStore.delete(id) }
+
+    fun addTrackToPlaylist(id: String, trackId: String): Boolean =
+        mutatePlaylists("Added song to playlist.") { playlistsStore.addTrack(id, trackId) }
+
+    fun removeTrackFromPlaylist(id: String, trackId: String): Boolean =
+        mutatePlaylists("Removed song from playlist. Original music is safe.") {
+            playlistsStore.removeTrack(id, trackId)
+        }
+
 
     private fun mediaItemFor(track: MusicTrack): MediaItem =
         MediaItem.Builder()

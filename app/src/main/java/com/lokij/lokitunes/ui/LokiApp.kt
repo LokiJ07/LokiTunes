@@ -52,6 +52,10 @@ import com.lokij.lokitunes.update.UpdateUiState
 import com.lokij.lokitunes.update.UpdateViewModel
 import com.lokij.lokitunes.data.MusicPaths
 import com.lokij.lokitunes.data.MusicTrack
+import com.lokij.lokitunes.data.IndexedSong
+import com.lokij.lokitunes.data.LibraryInsights
+import com.lokij.lokitunes.data.SongSort
+import com.lokij.lokitunes.data.SavedPlaylist
 import com.lokij.lokitunes.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -94,6 +98,43 @@ fun LokiApp(state: LokiUiState, vm: LokiViewModel) {
                         Uri.parse("https://github.com/LokiJ07/LokiTunes/releases")))
                 }
             }
+        )
+    }
+
+    val picking = state.tracks.firstOrNull { it.id == state.playlistPickerTrackId }
+    if (picking != null) {
+        AlertDialog(
+            onDismissRequest = vm::hidePlaylistPicker,
+            title = { Text("Add to playlist", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(picking.title, fontSize = 13.sp, color = SoftText, maxLines = 2)
+                    if (state.playlists.isEmpty()) {
+                        Text("No playlists yet. Create one in Library → Playlists.", color = SoftText)
+                    } else {
+                        LazyColumn(Modifier.heightIn(max = 340.dp)) {
+                            items(state.playlists, key = { it.id }) { playlist ->
+                                TextButton(onClick = {
+                                    vm.addTrackToPlaylist(playlist.id, picking.id)
+                                    vm.hidePlaylistPicker()
+                                }, modifier = Modifier.fillMaxWidth()) {
+                                    Icon(Icons.Default.PlaylistAdd, null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(playlist.name, modifier = Modifier.weight(1f), maxLines = 1)
+                                    if (picking.id in playlist.trackIds) Icon(Icons.Default.Check, null)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.hidePlaylistPicker(); selectedTab = 4 }) {
+                    Text("Open Library")
+                }
+            },
+            dismissButton = { TextButton(onClick = vm::hidePlaylistPicker) { Text("Close") } },
+            containerColor = NightPanel
         )
     }
 
@@ -303,13 +344,13 @@ private fun HomeScreen(state: LokiUiState, vm: LokiViewModel, openSongs: () -> U
         if (last != null) {
             item {
                 SectionTitle("Jump back in", "Your last selected track")
-                TrackRow(last, state.favorites.contains(last.id), onPlay = { vm.playTracks(listOf(last), 0) }, onFavorite = { vm.toggleFavorite(last.id) }, onPlayNext = { vm.queueTrack(last, true) }, onAddToQueue = { vm.queueTrack(last, false) })
+                TrackRow(last, state.favorites.contains(last.id), onPlay = { vm.playTracks(listOf(last), 0) }, onFavorite = { vm.toggleFavorite(last.id) }, onPlayNext = { vm.queueTrack(last, true) }, onAddToQueue = { vm.queueTrack(last, false) }, onPickPlaylist = { vm.showPlaylistPicker(last.id) })
             }
         }
         item { SectionTitle("Fresh in your library", "Recently added") }
         if (recent.isEmpty()) item { EmptyState("No music found yet", "Copy some audio files to your phone, then tap refresh.") }
         items(recent, key = { it.id }) { track ->
-            TrackRow(track, state.favorites.contains(track.id), onPlay = { vm.playTracks(recent, recent.indexOf(track)) }, onFavorite = { vm.toggleFavorite(track.id) }, onPlayNext = { vm.queueTrack(track, true) }, onAddToQueue = { vm.queueTrack(track, false) })
+            TrackRow(track, state.favorites.contains(track.id), onPlay = { vm.playTracks(recent, recent.indexOf(track)) }, onFavorite = { vm.toggleFavorite(track.id) }, onPlayNext = { vm.queueTrack(track, true) }, onAddToQueue = { vm.queueTrack(track, false) }, onPickPlaylist = { vm.showPlaylistPicker(track.id) })
         }
     }
 }
@@ -317,14 +358,14 @@ private fun HomeScreen(state: LokiUiState, vm: LokiViewModel, openSongs: () -> U
 @Composable
 private fun SongsScreen(state: LokiUiState, vm: LokiViewModel) {
     var query by rememberSaveable { mutableStateOf("") }
-    var alphabetical by rememberSaveable { mutableStateOf(true) }
-    val songs = remember(state.tracks, query, alphabetical) {
-        state.tracks.filter {
-            it.title.contains(query, true) || it.artist.contains(query, true) || it.folderPath.contains(query, true)
-        }.let { filtered ->
-            if (alphabetical) filtered.sortedBy { it.title.lowercase() }
-            else filtered.sortedByDescending { it.dateAdded }
+    var sortMenu by remember { mutableStateOf(false) }
+    val songs = remember(state.tracks, query, state.songSort) {
+        val filtered = state.tracks.filter {
+            it.title.contains(query, true) || it.artist.contains(query, true) ||
+                it.album.contains(query, true) || it.folderPath.contains(query, true)
         }
+        val byId = filtered.associateBy { it.id }
+        LibraryInsights.sorted(filtered.map { it.asIndexedSong() }, state.songSort).mapNotNull { byId[it.id] }
     }
     Column(Modifier.fillMaxSize()) {
         SectionHeader("All songs", "${state.tracks.size} tracks ready to play")
@@ -334,15 +375,29 @@ private fun SongsScreen(state: LokiUiState, vm: LokiViewModel) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("${songs.size} matches", color = SoftText, fontSize = 12.sp, modifier = Modifier.weight(1f))
-            TextButton(onClick = { alphabetical = !alphabetical }) {
-                Icon(Icons.Default.Sort, null, Modifier.size(17.dp))
-                Spacer(Modifier.width(4.dp))
-                Text(if (alphabetical) "A – Z" else "Newest")
+            Box {
+                TextButton(onClick = { sortMenu = true }) {
+                    Icon(Icons.Default.Sort, null, Modifier.size(17.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(state.songSort.label)
+                }
+                DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                    SongSort.entries.forEach { mode ->
+                        DropdownMenuItem(text = { Text(mode.label) }, onClick = {
+                            vm.setSongSort(mode)
+                            sortMenu = false
+                        }, trailingIcon = {
+                            if (mode == state.songSort) Icon(Icons.Default.Check, null)
+                        })
+                    }
+                }
             }
         }
         TrackList(songs, state.favorites, vm, "No matching songs", "Try another search or refresh the library.")
     }
 }
+
+private fun MusicTrack.asIndexedSong() = IndexedSong(id, title, artist, album, durationMs, dateAdded)
 
 @Composable
 private fun FoldersScreen(state: LokiUiState, vm: LokiViewModel) {
@@ -398,7 +453,7 @@ private fun FoldersScreen(state: LokiUiState, vm: LokiViewModel) {
                     FolderRow(MusicPaths.folderLabel(folder), folder, count) { explorerPath = folder }
                 }
                 items(direct, key = { it.id }) { track ->
-                    TrackRow(track, state.favorites.contains(track.id), onPlay = { vm.playTracks(direct, direct.indexOf(track)) }, onFavorite = { vm.toggleFavorite(track.id) }, onPlayNext = { vm.queueTrack(track, true) }, onAddToQueue = { vm.queueTrack(track, false) })
+                    TrackRow(track, state.favorites.contains(track.id), onPlay = { vm.playTracks(direct, direct.indexOf(track)) }, onFavorite = { vm.toggleFavorite(track.id) }, onPlayNext = { vm.queueTrack(track, true) }, onAddToQueue = { vm.queueTrack(track, false) }, onPickPlaylist = { vm.showPlaylistPicker(track.id) })
                 }
                 if (childFolders.isEmpty() && direct.isEmpty()) item { EmptyState("No audio here", "Go back to browse your folders.") }
             }
@@ -485,39 +540,195 @@ private fun LibraryScreen(state: LokiUiState, vm: LokiViewModel) {
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
     val tracks = state.tracks
     val groups = remember(tracks, category) {
-        tracks.groupBy { if (category == 0) it.album else it.artist }.toSortedMap()
+        if (category < 2) tracks.groupBy { if (category == 0) it.album else it.artist }.toSortedMap()
+        else emptyMap()
     }
     Column(Modifier.fillMaxSize()) {
-        SectionHeader("The collection", "Find your sound by album or artist")
-        Row(Modifier.padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = category == 0, onClick = { category = 0; selected = null }, label = { Text("Albums") })
-            FilterChip(selected = category == 1, onClick = { category = 1; selected = null }, label = { Text("Artists") })
+        SectionHeader("The collection", "Albums, artists, playlists & library health")
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("Albums", "Artists", "Playlists", "Duplicates").forEachIndexed { index, label ->
+                FilterChip(selected = category == index, onClick = { category = index; selected = null },
+                    label = { Text(label) })
+            }
         }
-        if (selected == null) {
-            LazyColumn(contentPadding = PaddingValues(bottom = 18.dp)) {
-                items(groups.keys.toList()) { name ->
-                    FolderRow(name, "${groups.getValue(name).size} tracks", groups.getValue(name).size) { selected = name }
+        when (category) {
+            2 -> PlaylistsPane(state, vm)
+            3 -> DuplicatesPane(state, vm)
+            else -> if (selected == null) {
+                LazyColumn(contentPadding = PaddingValues(bottom = 18.dp)) {
+                    items(groups.keys.toList()) { name ->
+                        FolderRow(name, "${groups.getValue(name).size} tracks", groups.getValue(name).size) { selected = name }
+                    }
+                    if (groups.isEmpty()) item { EmptyState("Nothing indexed yet", "Refresh after adding music.") }
                 }
-                if (groups.isEmpty()) item { EmptyState("Nothing indexed yet", "Refresh after adding music.") }
+            } else {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { selected = null }) { Icon(Icons.Default.ArrowBack, "Back", tint = Mint) }
+                    Text(selected.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, color = Lavender)
+                }
+                TrackList(groups[selected.orEmpty()].orEmpty(), state.favorites, vm, "No songs", "Try another album or artist.")
             }
-        } else {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { selected = null }) { Icon(Icons.Default.ArrowBack, "Back", tint = Mint) }
-                Text(selected.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, color = Lavender)
-            }
-            TrackList(groups[selected.orEmpty()].orEmpty(), state.favorites, vm, "No songs", "Try another album or artist.")
         }
     }
 }
 
 @Composable
-private fun TrackList(tracks: List<MusicTrack>, favorites: Set<String>, vm: LokiViewModel, title: String, subtitle: String) {
+private fun PlaylistsPane(state: LokiUiState, vm: LokiViewModel) {
+    var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    var creating by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
+    var adding by remember { mutableStateOf(false) }
+    var draft by remember { mutableStateOf("") }
+    var search by rememberSaveable { mutableStateOf("") }
+    val selected = state.playlists.firstOrNull { it.id == selectedId }
+    BackHandler(enabled = selected != null) { selectedId = null }
+
+    if (creating || renaming) {
+        val isRename = renaming
+        AlertDialog(onDismissRequest = { creating = false; renaming = false },
+            title = { Text(if (isRename) "Rename playlist" else "Create playlist") },
+            text = {
+                OutlinedTextField(value = draft, onValueChange = { draft = it.take(80) },
+                    label = { Text("Playlist name") }, singleLine = true)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val ok = if (isRename) selected?.let { vm.renamePlaylist(it.id, draft) } ?: false
+                             else vm.createPlaylist(draft)
+                    if (ok) { creating = false; renaming = false; draft = "" }
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { creating = false; renaming = false }) { Text("Cancel") }
+            }, containerColor = NightPanel)
+    }
+    if (deleting && selected != null) {
+        AlertDialog(onDismissRequest = { deleting = false }, title = { Text("Delete playlist?") },
+            text = { Text("Delete '${selected.name}'? Your music files and Favorites stay safe.") },
+            confirmButton = { TextButton(onClick = {
+                if (vm.deletePlaylist(selected.id)) selectedId = null
+                deleting = false
+            }) { Text("Delete", color = Color(0xFFFFA3A3)) } },
+            dismissButton = { TextButton(onClick = { deleting = false }) { Text("Cancel") } },
+            containerColor = NightPanel)
+    }
+    if (adding && selected != null) {
+        val candidates = remember(state.tracks, search) {
+            state.tracks.filter { it.title.contains(search, true) || it.artist.contains(search, true) }
+                .sortedBy { it.title.lowercase() }
+        }
+        AlertDialog(onDismissRequest = { adding = false }, title = { Text("Add songs to ${selected.name}") },
+            text = {
+                Column {
+                    OutlinedTextField(value = search, onValueChange = { search = it },
+                        label = { Text("Search songs") }, singleLine = true)
+                    Spacer(Modifier.height(10.dp))
+                    LazyColumn(Modifier.heightIn(max = 345.dp)) {
+                        items(candidates, key = { it.id }) { track ->
+                            val inList = track.id in selected.trackIds
+                            TextButton(onClick = { vm.addTrackToPlaylist(selected.id, track.id) },
+                                enabled = !inList, modifier = Modifier.fillMaxWidth()) {
+                                Icon(if (inList) Icons.Default.Check else Icons.Default.Add, null)
+                                Spacer(Modifier.width(6.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(track.artist, color = SoftText, fontSize = 11.sp, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
+            }, confirmButton = {
+                TextButton(onClick = { adding = false; search = "" }) { Text("Done") }
+            }, containerColor = NightPanel)
+    }
+
+    if (selected == null) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("${state.playlists.size} playlists", color = SoftText, modifier = Modifier.weight(1f))
+            FilledTonalButton(onClick = { draft = ""; creating = true }) {
+                Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text("New playlist")
+            }
+        }
+        if (state.playlists.isEmpty()) EmptyState("Your playlists live here", "Create a playlist to organize songs offline.")
+        else LazyColumn(contentPadding = PaddingValues(bottom = 20.dp)) {
+            items(state.playlists, key = { it.id }) { playlist ->
+                FolderRow(playlist.name, "Custom playlist", playlist.trackIds.size) { selectedId = playlist.id }
+            }
+        }
+    } else {
+        val byId = remember(state.tracks) { state.tracks.associateBy { it.id } }
+        val entries = remember(selected, state.tracks) { selected.trackIds.mapNotNull { byId[it] } }
+        val unavailable = selected.trackIds.size - entries.size
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { selectedId = null }) { Icon(Icons.Default.ArrowBack, "Back", tint = Mint) }
+            Text(selected.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
+            IconButton(onClick = { draft = selected.name; renaming = true }) {
+                Icon(Icons.Default.Edit, "Rename playlist", tint = Lavender)
+            }
+            IconButton(onClick = { deleting = true }) {
+                Icon(Icons.Default.DeleteOutline, "Delete playlist", tint = SoftText)
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("${entries.size} available songs", modifier = Modifier.weight(1f), color = SoftText, fontSize = 12.sp)
+            FilledTonalButton(onClick = { adding = true }) {
+                Icon(Icons.Default.PlaylistAdd, null, Modifier.size(18.dp)); Text("Add songs")
+            }
+            Spacer(Modifier.width(6.dp))
+            if (entries.isNotEmpty()) IconButton(onClick = { vm.playTracks(entries, 0) }) {
+                Icon(Icons.Default.PlayArrow, "Play playlist", tint = Mint)
+            }
+        }
+        if (unavailable > 0) Text("$unavailable unavailable song(s) skipped. Nothing was deleted.",
+            modifier = Modifier.padding(horizontal = 20.dp), color = SoftText, fontSize = 12.sp)
+        TrackList(entries, state.favorites, vm, "Empty playlist", "Use Add songs to choose music.", selected.id)
+    }
+}
+
+@Composable
+private fun DuplicatesPane(state: LokiUiState, vm: LokiViewModel) {
+    val byId = remember(state.tracks) { state.tracks.associateBy { it.id } }
+    val groups = remember(state.tracks) {
+        LibraryInsights.potentialDuplicates(state.tracks.map { it.asIndexedSong() })
+            .map { group -> group.mapNotNull { byId[it.id] } }
+    }
+    Column(Modifier.fillMaxSize()) {
+        Text("Potential duplicates only: same title, artist, and similar duration. No files are deleted.",
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 9.dp), color = SoftText, fontSize = 12.sp)
+        if (groups.isEmpty()) EmptyState("No likely duplicates found", "Your library looks tidy based on song metadata.")
+        else LazyColumn(contentPadding = PaddingValues(bottom = 18.dp)) {
+            groups.forEachIndexed { index, group ->
+                item { SectionTitle("Match ${index + 1} · ${group.first().title}", "${group.size} possible copies") }
+                items(group, key = { it.id }) { track ->
+                    TrackRow(track, state.favorites.contains(track.id),
+                        onPlay = { vm.playTracks(group, group.indexOf(track)) },
+                        onFavorite = { vm.toggleFavorite(track.id) },
+                        onPlayNext = { vm.queueTrack(track, true) },
+                        onAddToQueue = { vm.queueTrack(track, false) },
+                        onPickPlaylist = { vm.showPlaylistPicker(track.id) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackList(tracks: List<MusicTrack>, favorites: Set<String>, vm: LokiViewModel,
+    title: String, subtitle: String, playlistId: String? = null) {
     if (tracks.isEmpty()) {
         EmptyState(title, subtitle)
     } else {
         LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-            items(tracks, key = { it.id }) { track ->
-                TrackRow(track, favorites.contains(track.id), onPlay = { vm.playTracks(tracks, tracks.indexOf(track)) }, onFavorite = { vm.toggleFavorite(track.id) }, onPlayNext = { vm.queueTrack(track, true) }, onAddToQueue = { vm.queueTrack(track, false) })
+            itemsIndexed(tracks, key = { _, track -> track.id }) { index, track ->
+                TrackRow(track, favorites.contains(track.id), onPlay = { vm.playTracks(tracks, index) },
+                    onFavorite = { vm.toggleFavorite(track.id) },
+                    onPlayNext = { vm.queueTrack(track, true) },
+                    onAddToQueue = { vm.queueTrack(track, false) },
+                    onPickPlaylist = { vm.showPlaylistPicker(track.id) },
+                    onRemoveFromPlaylist = playlistId?.let { id -> { vm.removeTrackFromPlaylist(id, track.id); Unit } })
             }
         }
     }
@@ -530,7 +741,9 @@ private fun TrackRow(
     onPlay: () -> Unit,
     onFavorite: () -> Unit,
     onPlayNext: () -> Unit,
-    onAddToQueue: () -> Unit
+    onAddToQueue: () -> Unit,
+    onPickPlaylist: (() -> Unit)? = null,
+    onRemoveFromPlaylist: (() -> Unit)? = null
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Row(
@@ -561,6 +774,12 @@ private fun TrackRow(
                 DropdownMenuItem(text = { Text("Add to queue") }, leadingIcon = {
                     Icon(Icons.Default.QueueMusic, null)
                 }, onClick = { menuOpen = false; onAddToQueue() })
+                if (onPickPlaylist != null) DropdownMenuItem(text = { Text("Add to playlist") },
+                    leadingIcon = { Icon(Icons.Default.PlaylistAdd, null) },
+                    onClick = { menuOpen = false; onPickPlaylist() })
+                if (onRemoveFromPlaylist != null) DropdownMenuItem(text = { Text("Remove from playlist") },
+                    leadingIcon = { Icon(Icons.Default.RemoveCircleOutline, null) },
+                    onClick = { menuOpen = false; onRemoveFromPlaylist() })
             }
         }
     }

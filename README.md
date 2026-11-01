@@ -1,53 +1,69 @@
-# LokiTunes 🎧 — v0.6.0 Smart Lyrics
+# LokiTunes 🎧 — v0.7.0 Smart Music Library
 
-Android 8+ offline-first music player. Midnight Aurora UI. Free open source. **Package: `com.lokij.lokitunes` — unchanged**. `versionCode = 8`, `versionName = "0.6.0"`.
+**Offline-first Android music player** with Midnight Aurora UI. Free, no ads, open source. Android 8+ (`minSdk 26`).
 
-## New: automatic offline lyrics matching
+**Package remains `com.lokij.lokitunes`; versionName = `0.7.0`; versionCode = `9`.** Continue using the **same GitHub release signing keystore/secrets** you used for the previous signed releases. The app's Favorites, Lyrics cache, queue controls, and GitHub updater remain in place.
 
-1. Put lyrics alongside the music, e.g. `Music/OPM/Example.mp3` and `Music/OPM/Example.lrc`.
-2. In **Now Playing → Lyrics**, tap **Music folder** and choose `Music` (Android folder permission prompt).
-3. LokiTunes remembers that folder and attempts exact filename matches for each song on the next Lyrics opening. Subfolders are checked for songs whose MediaStore folder paths are beneath the selected folder.
-4. `.lrc` uses timestamps for synchronized highlighting. `.txt` is shown as plain text. Manual `.lrc/.txt` loading from v0.5.0 still works.
+## New in v0.7.0
 
-**Android 11+ scoped-storage restriction:** root storage and `Download` folder cannot be granted with the folder picker. Choose a specific allowed music folder or use **Local file** to select a single `.lrc` in Downloads. There is no broad `MANAGE_EXTERNAL_STORAGE` permission. This app only reads the folder you authorize. Local automatic matching never sends data online.
+### Custom playlists — locally saved
 
-## New: optional online lyrics search
+- Open **Library → Playlists → New playlist** to create a custom playlist.
+- Tap a playlist, choose **Add songs**, and search the existing music library. You can add multiple songs; already-added songs are checked.
+- Or open any song's **⋮ menu → Add to playlist**, and select an existing playlist.
+- Open a playlist and tap **Play** to play its available songs in saved order.
+- Rename playlists with the pencil icon; delete a playlist using the trash icon with confirmation. To remove one song only, open its **⋮ menu → Remove from playlist** inside the playlist.
+- Playlists are stored in private app preferences, not online. No accounts or internet are needed. Playlist actions **never delete, move, or modify** actual audio files.
+- A playlist may show “unavailable song(s)” if the underlying files were moved, deleted, or reindexed by Android. Missing songs are skipped during playback rather than crashing. Playlists refer to MediaStore song IDs and may not survive file moves or a fresh installation without a future dedicated backup/restore feature.
 
-1. Now Playing → **Lyrics** → **Online**.
-2. Review/edit song title and artist. Tap **Search lyrics**. Only these query terms are sent to `https://lrclib.net/api/search`.
-3. Select the correct match (synced or plain) → **Save**. The lyrics are saved within LokiTunes app-private storage and work offline afterward.
-4. Internet is not necessary for playback, normal lyrics viewing, or local matching. Lyrics search needs internet and depends on LRCLIB availability and rate limiting.
+### Better sorting and searching
 
-No internet search is performed in the background. No music files are uploaded. Lyrics text is never bundled in LokiTunes source. Credits: **LRCLIB** (user-selected lyrics search). Follow applicable lyrics rights.
+- Open **Songs → Sort** and choose: Title A–Z, Recently added, Artist A–Z, Album A–Z, or Longest first.
+- The chosen sort preference is retained after app restart and normal signed updates.
+- Search checks song title, artist, album and audio folder path. Existing folder list/explorer modes are preserved.
 
-## Signed GitHub release (no Android Studio needed)
+### Potential duplicate finder (read-only)
 
-Use the **existing LokiTunes signing keystore/secrets from v0.3.0**. Never regenerate release keys. Use the PATCH ZIP on top of the latest v0.5.0 Git project.
+- Open **Library → Duplicates**.
+- Groups are based on case-insensitive title + artist and song duration within two seconds. The feature **does not compare file contents or prove exact duplication**.
+- Unknown-title/unknown-artist recordings are excluded from the heuristic to avoid excessive false positives.
+- Results allow playback, favoriting, or adding to playlists. **There is no delete-file action.**
+
+## GitHub build and update (no Android Studio on your PC)
+
+1. Apply the patch files over your existing v0.6.0 project. Do not create a nested extra folder.
+2. Push the changes to `main`:
 
 ```bash
 git add -A
-git commit -m "feat: LokiTunes v0.6.0 Smart Lyrics"
+git commit -m "feat: LokiTunes v0.7.0 Smart Music Library"
 git push origin main
 ```
 
-Confirm **GitHub Actions build + unit tests are green**. Then tag the exact validated commit:
+3. Open **GitHub → Actions** and confirm `:app:testDebugUnitTest` and `:app:assembleDebug` succeed. A green main build is necessary but is not yet confirmation of real-device behavior.
+4. Only after the build succeeds, publish the **same commit** with:
 
 ```bash
-git tag v0.6.0
-git push origin v0.6.0
+git tag v0.7.0
+git push origin v0.7.0
 ```
 
-Check signed release APK `LokiTunes-v0.6.0-release.apk` in GitHub Releases. Update through **LokiTunes → Updates** from signed v0.5.0. No uninstall needed when signing certificate and package ID match; Favorites should remain.
+5. Verify the **signed** `LokiTunes-v0.7.0-release.apk` is published under GitHub Releases, then in the already-installed **signed** LokiTunes v0.6.0 use **Updates → Download → Install**. Never use the Actions debug APK as an update to the signed app.
 
-## Validation before publishing
+**Important:** Do not replace or regenerate the `LOKITUNES_*` release keystore/secrets. Losing or changing your private signing key prevents normal install-over updates of existing signed installations. No private `.jks` or passwords are included in this ZIP.
 
-Run `:app:testDebugUnitTest` and `:app:assembleDebug` on GitHub Actions, then install/test the signed release on a phone. Test Music folder granting, one-level and nested matches, manual file picker, remote search success/failure, downloaded lyrics without Wi-Fi, and existing music playback, Favorites, and updater. **No full Android Gradle build was run in the local packaging environment.**
+## v0.7.0 validation status
 
-## Privacy and safety
+- Pure Kotlin core compilation and **10 smoke assertions passed** locally for playlist naming, unique membership, sorting, and duplicate detection.
+- Kotlin JVM unit test files added for `PlaylistRules` and `LibraryInsights` in the GitHub Android test workflow.
+- Android XML and GitHub workflow YAML were checked for validity, and ZIP integrity was verified.
+- **A full Android/Compose APK build was not performed locally.** GitHub Actions must confirm compilation before release, and the real phone must confirm the UI and update path.
 
-- No broad storage privileges, server account, ads or analytics.
-- Optional online requests are user-triggered, to LRCLIB only.
-- Songs never uploaded.
-- Local cached lyrics are removed if the app is uninstalled.
-- Signing passwords/keystores should NEVER be committed to public GitHub.
-- MIT licensed.
+See [TEST_PLAN.md](TEST_PLAN.md) and [CHANGELOG.md](CHANGELOG.md).
+
+## Privacy
+
+- Offline scanning and playlist operations need no network connection.
+- Optional online lyrics from v0.6.0, and GitHub update checks/downloads, use internet only for their own functions.
+- No audio files are uploaded by the new library features.
+- License: MIT.

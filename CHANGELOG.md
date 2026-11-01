@@ -1,16 +1,20 @@
-# LokiTunes release notes
+# Changelog
 
-## v0.6.0 — Smart Lyrics
+## 0.7.0 — Smart Music Library (versionCode 9)
 
-- **Offline auto-match** of `.lrc` and `.txt` in a user-approved folder tree; exact audio filename or song-title basename, case-insensitive.
-- **Optional LRCLIB search** — manual action only, edit title/artist, inspect results and select a match, save lyrics to private local cache. No audio upload.
-- **Offline replay** of downloaded lyrics, synced highlighting with existing LRC parser.
-- **Manual local selection retained** from v0.5.0, plus ability to remove folder access.
-- Version **0.6.0**, build **8**; preserves `com.lokij.lokitunes`, Favorites, playback, equalizer shortcut and signed in-app updater.
+- Added private local custom playlists: create, rename, delete with confirmation, add/remove tracks, and ordered playlist playback.
+- Added “Add to playlist” to song context menus throughout Songs, Home, Favorites, Folders, Albums/Artists and duplicate results.
+- Added persisted Songs sorting: title, date added, artist, album and duration.
+- Added album name to search matches.
+- Added read-only potential duplicate groups based on title, artist and approximate duration. No automatic deletion or file modifications.
+- Removed a repeated linear lookup on each click within the common track list by using `itemsIndexed`.
+- Added playlist and library-insight JVM unit tests.
+- Kept app ID, stable signing workflow, Favorites preferences, lyrics features, UI theme, and updater configuration unchanged.
 
-## Known limitations
+## 0.6.0 — Smart Lyrics
 
-- Automatic local lookup is scoped to **one folder that the user chooses** (plus matching subdirectories), not all protected Android storage. Android 11+ does not allow tree grants to the storage root or Downloads root. For Downloads, choose individual lyric documents manually or move them into Music.
-- LRCLIB may lack or misidentify songs: always select the correct result; online requests need internet. Results may be rate-limited.
-- Offline cached lyrics live in app-private storage; uninstalling the app removes them.
-- Copyrighted lyrics are not included in this repository or APK.
+- Automatic offline same-basename lyrics matching in a user-granted music folder tree.
+- User-triggered LRCLIB search, choice of match, and app-private offline lyrics cache.
+- Retained manual lyrics selection and synchronized playback highlighting.
+
+For previous details see Git history/releases.
